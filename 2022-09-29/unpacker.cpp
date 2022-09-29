@@ -15,18 +15,18 @@ struct Header {
 
 struct FILE_E {
 	int offset_string;
-	int filesize_be;
+	int size;
 	int offset_content;
 	char checksum[8];
 };
 
-char *buf = new char[1024 * 1024 * 1024];
+unsigned char buf[1024 * 1024 * 1024];
 
 int main(int argc, char *argv[]) {
 	Header header;
 	vector<FILE_E> files;
-	char dirname[640];
-	char filename[640];
+	char dirname[320];
+	char filename[320];
 
 	// Check arguments
 	if (argc != 3) {
@@ -53,39 +53,38 @@ int main(int argc, char *argv[]) {
 	for (int k=0; k<header.file_count; k++) {
 		FILE_E file;
 		pak.read((char*)&file, sizeof(FILE_E));
-		file.filesize_be = __builtin_bswap32(file.filesize_be);
+		file.size = __builtin_bswap32(file.size);
 
 		files.push_back(file);
 	}
 
-	for (FILE_E file : files) {
+	for (const FILE_E file : files) {
 		strcpy(filename, dirname);
 		pak.seekg(header.offset_string + file.offset_string);
-		pak >> (filename + dir_len);
-		cout << "Filename: " << (filename + dir_len) << "  (" << file.filesize_be << " bytes)\n";
-		ofstream out(filename, ios::binary);
+		pak >> &filename[dir_len];
+		cout << "Filename: " << &filename[dir_len] << "  (" << file.size << " bytes)\n";
 
 		// Extract file
 		pak.seekg(header.offset_content + file.offset_content);
-		pak.read(buf, file.filesize_be);
-		out.write(buf, file.filesize_be);
+		pak.read(buf, file.size);
 
 		// Check checksum
 		bool corrupted = false;
-		char chk[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-		for (int i=0; i<file.filesize_be; i++)
+		unsigned char chk[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+		for (int i=0; i<file.size; i++)
 			chk[i%8] ^= buf[i];
+
 		for (int i=0; i<8; i++)
-			if (chk[7-i] != file.checksum[i])
-				corrupted = true;
-
-		// Clean up
-		out.close();
-
+			corrupted |= (chk[7-i] != file.checksum[i])
 		if (corrupted) {
 			cerr << "Warning: File " << filename << " is corrupted.\n";
-			unlink(filename);
+			continue;
 		}
+
+		// If not corrupted
+		ofstream out(filename, ios::binary);
+		out.write(buf, file.size);
+		out.close();
 	}
 	return 0;
 }
