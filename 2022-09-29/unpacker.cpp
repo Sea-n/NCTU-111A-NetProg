@@ -75,7 +75,7 @@ int main(int argc, char *argv[]) {
 			chk[i%8] ^= buf[i];
 
 		for (int i=0; i<8; i++)
-			corrupted |= (chk[7-i] != file.checksum[i])
+			corrupted |= (chk[7-i] != file.checksum[i]);
 		if (corrupted) {
 			cerr << "Warning: File " << filename << " is corrupted.\n";
 			continue;

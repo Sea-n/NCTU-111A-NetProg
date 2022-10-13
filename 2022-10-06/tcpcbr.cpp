@@ -23,7 +23,8 @@ int main(int argc, char *argv[]) {
 	bzero(&servaddr, sizeof(servaddr));
 	servaddr.sin_family = AF_INET;
 	servaddr.sin_port = htons(10003);
-	hostnm = gethostbyname("inp111.zoolab.org");
+	// hostnm = gethostbyname("inp111.zoolab.org");
+	hostnm = gethostbyname("localhost");
 	servaddr.sin_addr.s_addr = *((unsigned long *) hostnm->h_addr);
 
 	if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -38,14 +39,14 @@ int main(int argc, char *argv[]) {
 
 	// Main
 	fill_n(buf, 1002001, 'e');
-	sz = stof(argv[1]) * 0.954 * N;
+	// sz = stof(argv[1]) * 0.9963 * N;  // For external
+	sz = stof(argv[1]) * 0.9963 * N;  // For local sink server
 	cout << "Size: " << sz << endl;
 	for (;;) {
 		gettimeofday(&now, nullptr);
 		usleep(N - now.tv_usec % N);
 
-		rem += sz - n;
-		n = send(sockfd, buf, rem, 0);
+		n = send(sockfd, buf, sz, 0);
 		cout << "Sent " << n << " bytes.\n";
 	}
 }
