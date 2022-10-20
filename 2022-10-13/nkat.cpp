@@ -51,6 +51,7 @@ int main(int argc, char *argv[]) {
 			close(srvSock);
 			dup2(cliSock, 0);
 			dup2(cliSock, 1);
+			dup2(cliSock, 2);
 			execvp(argv[2], argv+2);
 
 			cerr << argv[0] << ": Command '" << argv[2] << "' not found.\n";
