@@ -130,20 +130,17 @@ int main(int argc, char *argv[]) {
 				} else if (strcmp(cmd, "JOIN") == 0) {
 					if (args[0][0] == '\0') {
 						sendsf(uid, 461, "JOIN :Not enought parameters");
-						continue;;
+						continue;
 					}
-					strcpy(buf+1, args[0] + (args[0][0] == '#' ? 1 : 0));
-					buf[0] = '#';  // Prepend #hash if not exist
 
-					for (cid=1; cid<MAX_CHANS; cid++)
-						if (strcmp(buf, chans[cid].name) == 0)
-							break;  // Channel found
-					if (cid == MAX_CHANS) {  // Channel not found
+					cid = cid_by_name(args[0]);
+					if (!cid) {  // Channel not found
 						for (cid=1; cid<MAX_CHANS; cid++)
 							if (!chans[cid].created_at)
 								break;  // Empty slot
 						time(&chans[cid].created_at);
-						strcpy(chans[cid].name, buf);
+						chans[cid].name[0] = '#';
+						strcpy(chans[cid].name+1, args[0] + (args[0][0] == '#' ? 1 : 0));
 					}
 					for (i=MAX_USERS-1; i>0; i--)  // Append user list
 						if (chans[cid].users[i-1] && !chans[cid].users[i]) {
@@ -158,45 +155,27 @@ int main(int argc, char *argv[]) {
 					else
 						sendsf(uid, 332, "%s :%s", chans[cid].name, chans[cid].topic);
 
-					// List channel users
-					sendf(uid, ":mircd 353 %s %s :", users[uid].name, chans[cid].name);
-					for (i=1; i<MAX_USERS; i++) {
-						if (!chans[cid].users[i])
-							continue;
-						sendf(uid, "%s ", users[i].name);
-					}
-					sendf(uid, "\n");
-					sendsf(uid, 366, "%s :End of Names List", chans[cid].name);
+					rpl_namereply(uid, cid);
 				} else if (strcmp(cmd, "TOPIC") == 0) {
 					if (args[0][0] == '\0') {
 						sendsf(uid, 461, "TOPIC :Not enought parameters");
 						continue;
 					}
-					strcpy(buf+1, args[0] + (args[0][0] == '#' ? 1 : 0));
-					buf[0] = '#';  // Prepend #hash if not exist
 
-					for (cid=1; cid<MAX_CHANS; cid++)
-						if (strcmp(buf, chans[cid].name) == 0)
-							break;  // Channel found
-					if (cid == MAX_CHANS) {
-						sendsf(uid, 442, "%s :You are not on that channel", buf);
-						continue;
-					}
-
-					for (i=1; i<MAX_USERS; i++)
-						if (chans[cid].users[i] == uid)
-							break;  // User found
-					if (i == MAX_USERS) {
-						sendsf(uid, 442, "%s :You are not on that channel", buf);
+					if (!(cid = cid_by_name(args[0])) || !uid_in_cid(uid, cid)) {
+						sendsf(uid, 442, "%s :You are not on that channel", args[0]);
 						continue;
 					}
 
 					if (args[1][0])  // Set topic
 						strcpy(chans[cid].topic, args[1]);
-					if (chans[cid].topic[0] == '\0')  // Show topic
-						sendsf(uid, 331, "%s :No topic is set", chans[cid].name);
-					else
-						sendsf(uid, 332, "%s :%s", chans[cid].name, chans[cid].topic);
+					rpl_topic(uid, cid);
+				} else if (strcmp(cmd, "NAMES") == 0) {
+					for (cid=1; cid<MAX_CHANS; cid++)
+						if (args[0][0] == '\0' || strcmp(args[0], chans[cid].name) == 0)
+							rpl_namereply(uid, cid);
+					if (!cid_by_name(args[0]))
+							sendsf(uid, 366, "%s :End of Names List", args[0]);
 				} else if (strcmp(cmd, "PRIVMSG") == 0) {
 					if (args[0][0] == '\0') {
 						sendsf(uid, 411, ":No recipient given (PRIVMSG)");
@@ -207,10 +186,7 @@ int main(int argc, char *argv[]) {
 						continue;
 					}
 
-					for (cid=1; cid<MAX_CHANS; cid++)
-						if (strcmp(args[0], chans[cid].name) == 0)
-							break;  // Channel found
-					if (cid == MAX_CHANS) {
+					if (!(cid = cid_by_name(args[0]))) {
 						sendsf(uid, 401, "%s :No such nick/channel", args[0]);
 						continue;
 					}
@@ -223,18 +199,12 @@ int main(int argc, char *argv[]) {
 						continue;
 					}
 
-					for (cid=1; cid<MAX_CHANS; cid++)
-						if (strcmp(args[0], chans[cid].name) == 0)
-							break;  // Channel found
-					if (cid == MAX_CHANS) {
+					if (!(cid = cid_by_name(args[0]))) {
 						sendsf(uid, 403, "%s :No such channel", args[0]);
 						continue;
 					}
-					for (i=1; i<MAX_USERS; i++)
-						if (chans[cid].users[i] == uid)
-							break;  // User found
-					if (i == MAX_USERS) {
-						sendsf(uid, 442, "%s :You are not on that channel", buf);
+					if (uid_in_cid(uid, cid)) {
+						sendsf(uid, 442, "%s :You are not on that channel", args[0]);
 						continue;
 					}
 					chans[cid].users[i] = 0;
@@ -291,3 +261,37 @@ int sendsf(const int uid, const int code, const char *fmt, ...) {
 
 	return send(users[uid].sock, buf, strlen(buf), 0);
 }  // sendsf
+
+int cid_by_name(const char *name) {
+	char new_name[1024] = "#";
+	strcpy(new_name+1, name + (name[0] == '#' ? 1 : 0));
+	for (int cid=1; cid<MAX_CHANS; cid++)
+		if (strcmp(new_name, chans[cid].name) == 0)
+			return cid;
+	return 0;
+}
+
+bool uid_in_cid(int uid, int cid) {
+	for (int i=1; i<MAX_USERS; i++)
+		if (chans[cid].users[i] == uid)
+			return true;
+	return false;
+}
+
+void rpl_namereply(int uid, int cid) {
+	sendf(uid, ":mircd 353 %s %s :", users[uid].name, chans[cid].name);
+	for (int i=1; i<MAX_USERS; i++) {
+		if (!chans[cid].users[i])
+			continue;
+		sendf(uid, "%s ", users[i].name);
+	}
+	sendf(uid, "\n");
+	sendsf(uid, 366, "%s :End of Names List", chans[cid].name);
+}
+
+void rpl_topic(int uid, int cid) {
+	if (chans[cid].topic[0] == '\0')
+		sendsf(uid, 331, "%s :No topic is set", chans[cid].name);
+	else
+		sendsf(uid, 332, "%s :%s", chans[cid].name, chans[cid].topic);
+}

@@ -11,6 +11,10 @@
 
 int sendf(const int uid, const char *fmt, ...);
 int sendsf(const int uid, const int code, const char *fmt, ...);
+int cid_by_name(const char *name);
+bool uid_in_cid(int uid, int cid);
+void rpl_namereply(int uid, int cid);
+void rpl_topic(int uid, int cid);
 
 struct User {
 	time_t created_at, deleted_at;
