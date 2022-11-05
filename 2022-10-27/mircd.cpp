@@ -4,12 +4,13 @@ using namespace std;
 
 User users[MAX_USERS];
 Channel chans[MAX_CHANS];
+int user_cnt = 0;
 
 int main(int argc, char *argv[]) {
 	struct sockaddr_in srvAddr, cliAddr;
 	socklen_t addr_size = sizeof(cliAddr);
-	int srvSock, uid, cid, n, i, one=1, cnt=0, muid=0;
-	char lines[42][MAX_TEXT], cmd[MAX_TEXT], arg[MAX_TEXT], args[42][MAX_TEXT], buf[3072], *ptr;
+	int srvSock, uid, n, i, one=1, muid=0;
+	char lines[42][MAX_TEXT], buf[3072], *ptr;
 	struct timeval zero = {0, 0};
 	fd_set fds;
 
@@ -38,7 +39,7 @@ int main(int argc, char *argv[]) {
 
 	for (;;) {  // Main loop
 		FD_ZERO(&fds); FD_SET(srvSock, &fds);
-		while (select(1024, &fds, NULL, NULL, &zero) > 0) {
+		while (select(1024, &fds, NULL, NULL, &zero) > 0) {  // New connections
 			users[++muid].sock = accept(srvSock, (struct sockaddr*) &cliAddr, &addr_size);
 			if (users[muid].sock < 0) {
 				fprintf(stderr, "%s: (%d) Accept error\n", argv[0], errno);
@@ -46,7 +47,7 @@ int main(int argc, char *argv[]) {
 				usleep(100 * 1000);
 				break;
 			}
-			cnt++;
+			user_cnt++;
 
 			sprintf(users[muid].addr, "%s", inet_ntoa(cliAddr.sin_addr));
 			time(&users[muid].created_at);
@@ -54,7 +55,7 @@ int main(int argc, char *argv[]) {
 			printf("* client connected from %s\n", users[muid].addr);
 		}
 
-		for (uid=1; uid<MAX_USERS; uid++) {
+		for (uid=1; uid<MAX_USERS; uid++) {  // Existing users
 			if (!users[uid].created_at || users[uid].deleted_at)
 				continue;
 			FD_ZERO(&fds); FD_SET(users[uid].sock, &fds);
@@ -63,9 +64,7 @@ int main(int argc, char *argv[]) {
 
 			if ((n = read(users[uid].sock, buf, 3070)) == 0) {
 				printf("* client %s disconnected\n", users[uid].addr);
-				time(&users[uid].deleted_at);
-				close(users[uid].sock);
-				cnt--;  // Current user count
+				user_quit(uid);
 				continue;
 			}
 			buf[n-1] = '\0';
@@ -80,163 +79,158 @@ int main(int argc, char *argv[]) {
 			}
 			lines[i][0] = '\0';
 
-			for (int ln=0; lines[ln][0]; ln++) {
-				// Parse command
-				strcpy(buf, lines[ln]);
-				ptr = strtok(buf, " ");
-				strcpy(cmd, ptr);
-				ptr = strtok(nullptr, "");
-				if (ptr == nullptr) {
-					strcpy(arg, "");
-					args[0][0] = '\0';
-				} else {
-					strcpy(arg, ptr);
-					strcpy(buf, arg);
-					for (i=0; ; i++) {
-						if (buf[0] == ':') {
-							strcpy(args[i], buf+1);
-							args[i+1][0] = '\0';
-							break;
-						}
-						ptr = strtok(buf, " ");
-						strcpy(args[i], ptr);
-						ptr = strtok(nullptr, "");
-						if (ptr == nullptr) {
-							args[i+1][0] = '\0';
-							break;
-						}
-						strcpy(buf, ptr);
-					}
-				}  // Parse command
-
-				if (strcmp(cmd, "PING") == 0) {
-					sendf(uid, "PONG %s\n", arg);
-				} else if (strcmp(cmd, "NICK") == 0) {
-					strcpy(users[uid].name, args[0]);
-				} else if (strcmp(cmd, "USER") == 0) {
-					sendsf(uid, 0x1, ":Welcome to the minimized IRC daemon!");
-					sendsf(uid, 251, ":There are %d users and 0 invisible on 1 server", cnt);
-					sendsf(uid, 375, ":- mircd Message of the day -");
-					sendsf(uid, 372, ":-  Hello, World!");
-					sendsf(uid, 372, ":-               @                    _");
-					sendsf(uid, 372, ":-   ____  ___   _   _ _   ____.     | |");
-					sendsf(uid, 372, ":-  /  _ `'_  \\ | | | '_/ /  __|  ___| |");
-					sendsf(uid, 372, ":-  | | | | | | | | | |   | |    /  _  |");
-					sendsf(uid, 372, ":-  | | | | | | | | | |   | |__  | |_| |");
-					sendsf(uid, 372, ":-  |_| |_| |_| |_| |_|   \\____| \\___,_|");
-					sendsf(uid, 372, ":-  minimized internet relay chat daemon");
-					sendsf(uid, 372, ":-");
-					sendsf(uid, 376, ":End of message of the day");
-				} else if (strcmp(cmd, "JOIN") == 0) {
-					if (args[0][0] == '\0') {
-						sendsf(uid, 461, "JOIN :Not enought parameters");
-						continue;
-					}
-
-					cid = cid_by_name(args[0]);
-					if (!cid) {  // Channel not found
-						for (cid=1; cid<MAX_CHANS; cid++)
-							if (!chans[cid].created_at)
-								break;  // Empty slot
-						time(&chans[cid].created_at);
-						chans[cid].name[0] = '#';
-						strcpy(chans[cid].name+1, args[0] + (args[0][0] == '#' ? 1 : 0));
-					}
-					for (i=MAX_USERS-1; i>0; i--)  // Append user list
-						if (chans[cid].users[i-1] && !chans[cid].users[i]) {
-							chans[cid].users[i] = uid;
-							chans[cid].cnt++;
-							break;
-						}
-
-					sendf(uid, ":%s JOIN %s\n", users[uid].name, chans[cid].name);
-					if (chans[cid].topic[0] == '\0')
-						sendsf(uid, 331, "%s :No topic is set", chans[cid].name);
-					else
-						sendsf(uid, 332, "%s :%s", chans[cid].name, chans[cid].topic);
-
-					rpl_namereply(uid, cid);
-				} else if (strcmp(cmd, "TOPIC") == 0) {
-					if (args[0][0] == '\0') {
-						sendsf(uid, 461, "TOPIC :Not enought parameters");
-						continue;
-					}
-
-					if (!(cid = cid_by_name(args[0])) || !uid_in_cid(uid, cid)) {
-						sendsf(uid, 442, "%s :You are not on that channel", args[0]);
-						continue;
-					}
-
-					if (args[1][0])  // Set topic
-						strcpy(chans[cid].topic, args[1]);
-					rpl_topic(uid, cid);
-				} else if (strcmp(cmd, "NAMES") == 0) {
-					for (cid=1; cid<MAX_CHANS; cid++)
-						if (args[0][0] == '\0' || strcmp(args[0], chans[cid].name) == 0)
-							rpl_namereply(uid, cid);
-					if (!cid_by_name(args[0]))
-							sendsf(uid, 366, "%s :End of Names List", args[0]);
-				} else if (strcmp(cmd, "PRIVMSG") == 0) {
-					if (args[0][0] == '\0') {
-						sendsf(uid, 411, ":No recipient given (PRIVMSG)");
-						continue;
-					}
-					if (args[1][0] == '\0') {
-						sendsf(uid, 412, ":No text to send");
-						continue;
-					}
-
-					if (!(cid = cid_by_name(args[0]))) {
-						sendsf(uid, 401, "%s :No such nick/channel", args[0]);
-						continue;
-					}
-					for (i=1; i<MAX_USERS; i++)
-						if (chans[cid].users[i] && i != uid)
-							sendf(i, ":%s PRIVMSG %s :%s\n", users[uid].name, chans[cid].name, args[1]);
-				} else if (strcmp(cmd, "PART") == 0) {
-					if (args[0][0] == '\0') {
-						sendsf(uid, 461, "PART :Not enought parameters");
-						continue;
-					}
-
-					if (!(cid = cid_by_name(args[0]))) {
-						sendsf(uid, 403, "%s :No such channel", args[0]);
-						continue;
-					}
-					if (uid_in_cid(uid, cid)) {
-						sendsf(uid, 442, "%s :You are not on that channel", args[0]);
-						continue;
-					}
-					chans[cid].users[i] = 0;
-					chans[cid].cnt--;
-					sendf(uid, ":%s PART :%s\n", users[uid].name, chans[cid].name);
-				} else if (strcmp(cmd, "USERS") == 0) {
-					sendsf(uid, 392, ":%-32s Terminal  Host", "UserID");
-					for (i=0; i<MAX_USERS; i++) {
-						if (!users[i].created_at || users[i].deleted_at)
-							continue;
-						sendsf(uid, 393, ":%-32s %-9s %s", users[i].name, "-", users[i].addr);
-					}
-					sendsf(uid, 394, ":End of users");
-				} else if (strcmp(cmd, "LIST") == 0) {
-					sendsf(uid, 321, "Channel :Users Name");
-					for (i=0; i<MAX_CHANS; i++) {
-						if (!chans[i].created_at || chans[i].deleted_at)
-							continue;
-						if (args[0][0] && strcmp(args[0], chans[i].name) != 0)
-							continue;
-						sendsf(uid, 322, "%s %d :%s", chans[i].name, chans[i].cnt, chans[i].topic);
-					}
-					sendsf(uid, 323, ":End of List");
-				} else if (strcmp(cmd, "QUIT") == 0) {
-					// pass
-				} else {
-					sendsf(uid, 421, "%s :Unknown command", cmd);
-				}
-			}  // One line of command
-		}  // End for users
+			for (int ln=0; lines[ln][0]; ln++)
+				proc_cmd(uid, lines[ln]);
+		}
 	}  // End main loop
 }  // main function
+
+void proc_cmd(const int uid, const char *line) {
+	char cmd[MAX_TEXT], arg[MAX_TEXT], args[42][MAX_TEXT], buf[3072], *ptr;
+	int cid, i;
+
+	strcpy(buf, line);
+	ptr = strtok(buf, " ");
+	strcpy(cmd, ptr);
+	ptr = strtok(nullptr, "");
+	if (ptr == nullptr) {
+		strcpy(arg, "");
+		args[0][0] = '\0';
+	} else {
+		strcpy(arg, ptr);
+		strcpy(buf, arg);
+		for (i=0; ; i++) {
+			if (buf[0] == ':') {
+				strcpy(args[i], buf+1);
+				args[i+1][0] = '\0';
+				break;
+			}
+			ptr = strtok(buf, " ");
+			strcpy(args[i], ptr);
+			ptr = strtok(nullptr, "");
+			if (ptr == nullptr) {
+				args[i+1][0] = '\0';
+				break;
+			}
+			strcpy(buf, ptr);
+		}
+	}  // Parse command
+
+	if (strcmp(cmd, "PING") == 0) {
+		sendf(uid, "PONG %s\n", arg);
+	} else if (strcmp(cmd, "NICK") == 0) {
+		strcpy(users[uid].name, args[0]);
+	} else if (strcmp(cmd, "USER") == 0) {
+		sendsf(uid, 0x1, ":Welcome to the minimized IRC daemon!");
+		sendsf(uid, 251, ":There are %d users and 0 invisible on 1 server", user_cnt);
+		sendsf(uid, 375, ":- mircd Message of the day -");
+		sendsf(uid, 372, ":-  Hello, World!");
+		sendsf(uid, 372, ":-               @                    _");
+		sendsf(uid, 372, ":-   ____  ___   _   _ _   ____.     | |");
+		sendsf(uid, 372, ":-  /  _ `'_  \\ | | | '_/ /  __|  ___| |");
+		sendsf(uid, 372, ":-  | | | | | | | | | |   | |    /  _  |");
+		sendsf(uid, 372, ":-  | | | | | | | | | |   | |__  | |_| |");
+		sendsf(uid, 372, ":-  |_| |_| |_| |_| |_|   \\____| \\___,_|");
+		sendsf(uid, 372, ":-  minimized internet relay chat daemon");
+		sendsf(uid, 372, ":-");
+		sendsf(uid, 376, ":End of message of the day");
+	} else if (strcmp(cmd, "JOIN") == 0) {
+		CHECK_PARAM();
+
+		cid = cid_by_name(args[0]);
+		if (!cid) {  // Channel not found
+			while (chans[++cid].created_at) ;
+			time(&chans[cid].created_at);
+			chans[cid].name[0] = '#';
+			strcpy(chans[cid].name+1, args[0] + (args[0][0] == '#' ? 1 : 0));
+		}
+		for (i=MAX_USERS-1; i>0; i--)  // Append user list
+			if (chans[cid].users[i-1] && !chans[cid].users[i]) {
+				chans[cid].users[i] = uid;
+				chans[cid].user_cnt++;
+				break;
+			}
+
+		sendf(uid, ":%s JOIN %s\n", users[uid].name, chans[cid].name);
+		if (chans[cid].topic[0] == '\0')
+			sendsf(uid, 331, "%s :No topic is set", chans[cid].name);
+		else
+			sendsf(uid, 332, "%s :%s", chans[cid].name, chans[cid].topic);
+
+		rpl_namereply(uid, cid);
+	} else if (strcmp(cmd, "TOPIC") == 0) {
+		CHECK_PARAM();
+
+		if (!(cid = cid_by_name(args[0])) || !uid_in_cid(uid, cid)) {
+			sendsf(uid, 442, "%s :You are not on that channel", args[0]);
+			return;
+		}
+
+		if (args[1][0])  // Set topic
+			strcpy(chans[cid].topic, args[1]);
+		rpl_topic(uid, cid);
+	} else if (strcmp(cmd, "NAMES") == 0) {
+		if (!args[0][0])
+			for (cid=1; cid<MAX_CHANS; cid++)
+				rpl_namereply(uid, cid);
+		else if ((cid = cid_by_name(args[0])))
+			rpl_namereply(uid, cid);
+		else  // Specified non-existing channel
+			sendsf(uid, 366, "%s :End of Names List", args[0]);
+	} else if (strcmp(cmd, "PRIVMSG") == 0) {
+		if (args[0][0] == '\0') {
+			sendsf(uid, 411, ":No recipient given (PRIVMSG)");
+			return;
+		}
+		if (args[1][0] == '\0') {
+			sendsf(uid, 412, ":No text to send");
+			return;
+		}
+
+		if (!(cid = cid_by_name(args[0]))) {
+			sendsf(uid, 401, "%s :No such nick/channel", args[0]);
+			return;
+		}
+		for (i=1; i<MAX_USERS; i++)
+			if (chans[cid].users[i] && i != uid)
+				sendf(i, ":%s PRIVMSG %s :%s\n", users[uid].name, chans[cid].name, args[1]);
+	} else if (strcmp(cmd, "PART") == 0) {
+		CHECK_PARAM();
+
+		if (!(cid = cid_by_name(args[0]))) {
+			sendsf(uid, 403, "%s :No such channel", args[0]);
+			return;
+		}
+		if ((i = uid_in_cid(uid, cid))) {
+			sendsf(uid, 442, "%s :You are not on that channel", args[0]);
+			return;
+		}
+		chans[cid].users[i] = 0;
+		chans[cid].user_cnt--;
+		sendf(uid, ":%s PART :%s\n", users[uid].name, chans[cid].name);
+	} else if (strcmp(cmd, "USERS") == 0) {
+		sendsf(uid, 392, ":%-32s Terminal  Host", "UserID");
+		for (i=0; i<MAX_USERS; i++)
+			if (users[i].created_at && !users[i].deleted_at)
+				sendsf(uid, 393, ":%-32s %-9s %s", users[i].name, "-", users[i].addr);
+		sendsf(uid, 394, ":End of users");
+	} else if (strcmp(cmd, "LIST") == 0) {
+		sendsf(uid, 321, "Channel :Users Name");
+		for (cid=0; cid<MAX_CHANS; cid++) {
+			if (!chans[cid].created_at || chans[cid].deleted_at)
+				continue;
+			if (args[0][0] && strcmp(args[0], chans[cid].name) != 0)
+				continue;
+			sendsf(uid, 322, "%s %d :%s", chans[cid].name, chans[cid].user_cnt, chans[cid].topic);
+		}
+		sendsf(uid, 323, ":End of List");
+	} else if (strcmp(cmd, "QUIT") == 0) {
+		printf("* client %s quitted\n", users[uid].addr);
+		user_quit(uid);
+	} else {
+		sendsf(uid, 421, "%s :Unknown command", cmd);
+	}
+}
 
 int sendf(const int uid, const char *fmt, ...) {
 	char buf[8192];
@@ -255,7 +249,7 @@ int sendsf(const int uid, const int code, const char *fmt, ...) {
 
 	sprintf(new_fmt, ":mircd %03d %s %s\n", code, users[uid].name, fmt);
 
-	va_start(va, new_fmt);
+	va_start(va, fmt);
 	vsprintf(buf, new_fmt, va);
 	va_end(va);
 
@@ -271,13 +265,25 @@ int cid_by_name(const char *name) {
 	return 0;
 }
 
-bool uid_in_cid(int uid, int cid) {
+int uid_in_cid(int uid, int cid) {
 	for (int i=1; i<MAX_USERS; i++)
 		if (chans[cid].users[i] == uid)
-			return true;
-	return false;
+			return i;
+	return 0;
 }
 
+void user_quit(int uid) {
+	time(&users[uid].deleted_at);
+	close(users[uid].sock);
+	user_cnt--;
+
+	for (int cid=1; cid<MAX_CHANS; cid++)
+		for (int i=1; i<MAX_USERS; i++)
+			if (chans[cid].users[i] == uid) {
+				chans[cid].users[i] = 0;
+				chans[cid].user_cnt--;
+			}
+}
 void rpl_namereply(int uid, int cid) {
 	sendf(uid, ":mircd 353 %s %s :", users[uid].name, chans[cid].name);
 	for (int i=1; i<MAX_USERS; i++) {
