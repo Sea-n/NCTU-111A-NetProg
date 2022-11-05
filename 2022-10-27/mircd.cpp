@@ -10,7 +10,7 @@ int main(int argc, char *argv[]) {
 	struct sockaddr_in srvAddr, cliAddr;
 	socklen_t addr_size = sizeof(cliAddr);
 	int srvSock, uid, n, i, one=1, muid=0;
-	char lines[42][MAX_TEXT], buf[3072], *ptr;
+	char lines[42][MAX_TEXT], buf[MAX_TEXT*42], *ptr;
 	struct timeval zero = {0, 0};
 	fd_set fds;
 
@@ -62,7 +62,7 @@ int main(int argc, char *argv[]) {
 			if (select(1024, &fds, NULL, NULL, &zero) <= 0)
 				continue;
 
-			if ((n = read(users[uid].sock, buf, 3070)) == 0) {
+			if ((n = read(users[uid].sock, buf, MAX_TEXT*40)) == 0) {
 				printf("* client %s disconnected\n", users[uid].addr);
 				user_quit(uid);
 				continue;
@@ -70,23 +70,19 @@ int main(int argc, char *argv[]) {
 			buf[n-1] = '\0';
 
 			ptr = strtok(buf, "\r\n");
-			for (i=0; ptr != nullptr; i++) {
+			for (i=0; ptr != nullptr; ptr = strtok(nullptr, "\r\n"))
 				if (ptr[0])
-					strcpy(lines[i], ptr);
-				else
-					i--;
-				ptr = strtok(nullptr, "\r\n");
-			}
+					strcpy(lines[i++], ptr);
 			lines[i][0] = '\0';
 
-			for (int ln=0; lines[ln][0]; ln++)
-				proc_cmd(uid, lines[ln]);
+			for (i=0; lines[i][0]; i++)
+				proc_cmd(uid, lines[i]);
 		}
 	}  // End main loop
 }  // main function
 
 void proc_cmd(const int uid, const char *line) {
-	char cmd[MAX_TEXT], arg[MAX_TEXT], args[42][MAX_TEXT], buf[3072], *ptr;
+	char cmd[MAX_TEXT], args[42][MAX_TEXT], buf[MAX_TEXT], *ptr;
 	int cid, i;
 
 	strcpy(buf, line);
@@ -94,11 +90,9 @@ void proc_cmd(const int uid, const char *line) {
 	strcpy(cmd, ptr);
 	ptr = strtok(nullptr, "");
 	if (ptr == nullptr) {
-		strcpy(arg, "");
 		args[0][0] = '\0';
 	} else {
-		strcpy(arg, ptr);
-		strcpy(buf, arg);
+		strcpy(buf, ptr);
 		for (i=0; ; i++) {
 			if (buf[0] == ':') {
 				strcpy(args[i], buf+1);
@@ -117,7 +111,7 @@ void proc_cmd(const int uid, const char *line) {
 	}  // Parse command
 
 	if (strcmp(cmd, "PING") == 0) {
-		sendf(uid, "PONG %s\n", arg);
+		sendf(uid, "PONG %s\n", line+5);
 	} else if (strcmp(cmd, "NICK") == 0) {
 		strcpy(users[uid].name, args[0]);
 	} else if (strcmp(cmd, "USER") == 0) {
@@ -233,7 +227,7 @@ void proc_cmd(const int uid, const char *line) {
 }
 
 int sendf(const int uid, const char *fmt, ...) {
-	char buf[8192];
+	char buf[MAX_TEXT*42];
 	va_list va;
 
 	va_start(va, fmt);
@@ -244,7 +238,7 @@ int sendf(const int uid, const char *fmt, ...) {
 }  // sendf
 
 int sendsf(const int uid, const int code, const char *fmt, ...) {
-	char new_fmt[8192], buf[8192];
+	char new_fmt[MAX_TEXT*42], buf[MAX_TEXT*42];
 	va_list va;
 
 	sprintf(new_fmt, ":mircd %03d %s %s\n", code, users[uid].name, fmt);
@@ -257,7 +251,7 @@ int sendsf(const int uid, const int code, const char *fmt, ...) {
 }  // sendsf
 
 int cid_by_name(const char *name) {
-	char new_name[1024] = "#";
+	char new_name[MAX_TEXT] = "#";
 	strcpy(new_name+1, name + (name[0] == '#' ? 1 : 0));
 	for (int cid=1; cid<MAX_CHANS; cid++)
 		if (strcmp(new_name, chans[cid].name) == 0)
