@@ -85,6 +85,7 @@ void proc_cmd(const int uid, const char *line) {
 	char cmd[MAX_TEXT], args[42][MAX_TEXT], buf[MAX_TEXT], *ptr;
 	int cid, i;
 
+	printf("proc_cmd(%d, %s)\n", uid, line);
 	strcpy(buf, line);
 	ptr = strtok(buf, " ");
 	strcpy(cmd, ptr);
@@ -234,6 +235,7 @@ int sendf(const int uid, const char *fmt, ...) {
 	vsprintf(buf, fmt, va);
 	va_end(va);
 
+	printf("sendf(%d): %s\n", uid, buf);
 	return send(users[uid].sock, buf, strlen(buf), 0);
 }  // sendf
 
@@ -247,6 +249,7 @@ int sendsf(const int uid, const int code, const char *fmt, ...) {
 	vsprintf(buf, new_fmt, va);
 	va_end(va);
 
+	printf("sendsf(%d): %s", uid, buf);
 	return send(users[uid].sock, buf, strlen(buf), 0);
 }  // sendsf
 
