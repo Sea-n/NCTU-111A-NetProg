@@ -3,14 +3,15 @@
 using namespace std;
 
 int main(int argc, char *argv[]) {
-	int cmdSock, datSock, cliSock, n, one=1, cnt=0;
 	struct sockaddr_in cmdAddr, datAddr, cliAddr;
+	int cmdSock, datSock, cliSock, n, one=1;
 	socklen_t addr_size = sizeof(cliAddr);
 	vector<int> cmdSocks, datSocks;
 	struct timeval zero = {0, 0};
 	char buf[MAX_TEXT];
 	double elap, mbps;
 	timeval rst, now;
+	long cnt = 0;
 	fd_set fds;
 
 	// Init TCP socket
@@ -67,7 +68,7 @@ int main(int argc, char *argv[]) {
 				continue;
 
 			if ((n = read(sock, buf, MAX_TEXT)) == 0) {
-				remove(cmdSocks.begin(), cmdSocks.end(), sock);
+				cmdSocks.erase(remove(cmdSocks.begin(), cmdSocks.end(), sock), cmdSocks.end());
 				continue;
 			}
 			buf[n-1] = '\0';
@@ -85,9 +86,9 @@ int main(int argc, char *argv[]) {
 				gettimeofday(&now, NULL);
 				elap = (now.tv_sec - rst.tv_sec) + 1e-6 * (now.tv_usec - rst.tv_usec);
 				mbps = 8 * cnt / 1000. / 1000. / elap;
-				sendf(sock, "REPORT %d %ld %.6lfs %.6lfMbps", cnt, elap, mbps);
+				sendf(sock, "REPORT %ld %ld %.6lfs %.6lfMbps", cnt, elap, mbps);
 			} else if (strcmp(buf, "/reset") == 0) {
-				sendf(sock, "RESET %d", cnt);
+				sendf(sock, "RESET %ld", cnt);
 				gettimeofday(&rst, NULL);
 				cnt = 0;
 			} else {
@@ -101,7 +102,7 @@ int main(int argc, char *argv[]) {
 				continue;
 			n = read(sock, buf, MAX_TEXT);
 			if (n == 0)
-				remove(datSocks.begin(), datSocks.end(), sock);
+				datSocks.erase(remove(datSocks.begin(), datSocks.end(), sock), datSocks.end());
 			cnt += n;
 		}
 	}  // End main loop
