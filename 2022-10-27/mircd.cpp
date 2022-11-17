@@ -85,7 +85,7 @@ void proc_cmd(const int uid, const char *line) {
 	char cmd[MAX_TEXT], args[42][MAX_TEXT], buf[MAX_TEXT], *ptr;
 	int cid, i;
 
-	printf("proc_cmd(%d, %s)\n", uid, line);
+	printf("proc_cmd  %s (%d): %s\n", users[uid].name, uid, line);
 	strcpy(buf, line);
 	ptr = strtok(buf, " ");
 	strcpy(cmd, ptr);
@@ -101,6 +101,10 @@ void proc_cmd(const int uid, const char *line) {
 				break;
 			}
 			ptr = strtok(buf, " ");
+			if (ptr == nullptr) {
+				args[i+1][0] = '\0';
+				break;  // Trailing spaces
+			}
 			strcpy(args[i], ptr);
 			ptr = strtok(nullptr, "");
 			if (ptr == nullptr) {
@@ -114,8 +118,27 @@ void proc_cmd(const int uid, const char *line) {
 	if (strcmp(cmd, "PING") == 0) {
 		sendf(uid, "PONG %s\n", line+5);
 	} else if (strcmp(cmd, "NICK") == 0) {
+		if (args[0][0] == '\0') {
+			sendsf(uid, 431, ":No nickname given");
+			return;
+		}
+
+		for (i=0; i<MAX_USERS; i++)
+			if (users[i].created_at && !users[i].deleted_at && strcmp(args[0], users[i].name) == 0) {
+				sendsf(uid, 436, "%s :Nickname collision KILL", args[0]);
+				return;
+			}
+
 		strcpy(users[uid].name, args[0]);
 	} else if (strcmp(cmd, "USER") == 0) {
+		if (args[3][0] == '\0') {
+			sendsf(uid, 461, "%s :Not enought parameters", cmd);
+			return;
+		}
+
+		if (users[uid].name[0] == '\0')
+			return;
+
 		sendsf(uid, 0x1, ":Welcome to the minimized IRC daemon!");
 		sendsf(uid, 251, ":There are %d users and 0 invisible on 1 server", user_cnt);
 		sendsf(uid, 375, ":- mircd Message of the day -");
@@ -139,6 +162,8 @@ void proc_cmd(const int uid, const char *line) {
 			chans[cid].name[0] = '#';
 			strcpy(chans[cid].name+1, args[0] + (args[0][0] == '#' ? 1 : 0));
 		}
+		if (uid_in_cid(uid, cid))
+			return;
 		for (i=MAX_USERS-1; i>0; i--)  // Append user list
 			if (chans[cid].users[i-1] && !chans[cid].users[i]) {
 				chans[cid].users[i] = uid;
@@ -187,8 +212,8 @@ void proc_cmd(const int uid, const char *line) {
 			return;
 		}
 		for (i=1; i<MAX_USERS; i++)
-			if (chans[cid].users[i] && i != uid)
-				sendf(i, ":%s PRIVMSG %s :%s\n", users[uid].name, chans[cid].name, args[1]);
+			if (chans[cid].users[i] && chans[cid].users[i] != uid)
+				sendf(chans[cid].users[i], ":%s PRIVMSG %s :%s\n", users[uid].name, chans[cid].name, args[1]);
 	} else if (strcmp(cmd, "PART") == 0) {
 		CHECK_PARAM();
 
@@ -235,7 +260,7 @@ int sendf(const int uid, const char *fmt, ...) {
 	vsprintf(buf, fmt, va);
 	va_end(va);
 
-	printf("sendf(%d): %s\n", uid, buf);
+	printf("sendf  -> %s (%d): %s\n", users[uid].name, uid, buf);
 	return send(users[uid].sock, buf, strlen(buf), 0);
 }  // sendf
 
@@ -249,7 +274,7 @@ int sendsf(const int uid, const int code, const char *fmt, ...) {
 	vsprintf(buf, new_fmt, va);
 	va_end(va);
 
-	printf("sendsf(%d): %s", uid, buf);
+	printf("sendsf -> %s (%d): %s", users[uid].name, uid, buf);
 	return send(users[uid].sock, buf, strlen(buf), 0);
 }  // sendsf
 

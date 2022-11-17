@@ -10,7 +10,7 @@
 
 #define CMD_PORT 9998
 #define DAT_PORT 9999
-#define MAX_TEXT 212057
+#define MAX_TEXT 890604
 
 #define ALL(x) (x).begin(), (x).end()
 
