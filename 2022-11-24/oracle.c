@@ -82,6 +82,7 @@ void oracle_guess(oracle_t *o) {
 	if (strcmp(guess, o->secret) == 0) {
 		printf("*** Good Job!\n");
 		system("/showflag");
+		// INP{e1242df8152b0edd0a7111ba06a750e5ad95a175_637ed792_48a1d_f6585952f952aaa138b1461a7f6f3c855b079883}
 		o->stage = 0;
 	} else {
 		printf("*** No no no ...\n");

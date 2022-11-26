@@ -1,0 +1,48 @@
+Payload:
+r
+t.me/10000
+r
+localhost/10000
+v
+v
+
+
+Proof-of-Work Access Rate Control: Given a prefix P = '2decdc86'.
+Please send me a base64-encoded string S so that the hexdigest of
+sha1(P+decode(S)) has at least 0 leading zeros.
+Enter your string S: XXX
+SHA1: 0000008e5bbcb7016510beedeaab7798cfabc357
+
+Welcome to the INP Web Checker Service!
+
+-----------------------------
+      MENU
+-----------------------------
+ r: request from a webserver
+ c: check request queue
+ v: view worker status
+ q: quit
+-----------------------------
+
+> r
+Enter ``server-domain-name/port``: t.me/10000
+** New request added: t.me/10000
+
+> r
+Enter ``server-domain-name/port``: localhost/10000
+** New request added: t.me/10000
+
+> v
+==== Worker Status ====
+Worker #1: [g.co/10000] Connecting to 149.154.167.99:10000 ... (1)
+Worker #2: [localhost/10000] Get from local or private address is not allowed.
+=======================
+
+// Wait for minutes
+
+> v
+==== Worker Status ====
+Worker #1: [g.co/10000] INP{9d156bb762dcc604804a7769be3b4990fb765304_637efbb4_18626_8da018e56a947cc25b306f43822fae7b0c5296d8}
+Worker #2: [localhost/10000] Get from local or private address is not allowed.
+=======================
+
