@@ -1,47 +1,39 @@
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <stdio.h>
-
-#define err_quit(m) { perror(m); exit(-1); }
+#include "server.h"
 
 int main(int argc, char *argv[]) {
-	int s;
+	int sock;
 	struct sockaddr_in sin;
 
-	if (argc < 2) {
-		return -fprintf(stderr, "usage: %s ... <port>\n", argv[0]);
+	if (argc != 4) {
+		fprintf(stderr, "usage: %s <path-to-store-files> <total-number-of-files> <port>\n", argv[0]);
+		exit(0);
 	}
-
-	setvbuf(stdin, NULL, _IONBF, 0);
-	setvbuf(stderr, NULL, _IONBF, 0);
-	setvbuf(stdout, NULL, _IONBF, 0);
 
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons(strtol(argv[argc-1], NULL, 0));
 
-	if ((s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
-		err_quit("socket");
-
-	if (bind(s, (struct sockaddr*) &sin, sizeof(sin)) < 0)
-		err_quit("bind");
+	sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	bind(sock, (struct sockaddr*) &sin, sizeof(sin));
 
 	while (1) {
 		struct sockaddr_in csin;
 		socklen_t csinlen = sizeof(csin);
-		char buf[2048];
+		unsigned char buf[MTU];
 		int rlen;
 		
-		if ((rlen = recvfrom(s, buf, sizeof(buf), 0, (struct sockaddr*) &csin, &csinlen)) < 0) {
+		if ((rlen = recvfrom(sock, buf, sizeof(buf), 0, (struct sockaddr*) &csin, &csinlen)) < 0) {
 			perror("recvfrom");
-			break;
+			continue;
 		}
+		RUP *p = (RUP *) buf;
 
-		sendto(s, buf, rlen, 0, (struct sockaddr*) &csin, sizeof(csin));
+		printf("Recv %d\n", rlen);
+		printf("Type=%x idx=%d frag=%d\\%d CRC32=%x\n", p->type, p->index, p->frag_cnt, p->frag_seq, p->crc32);
+		printf("Content %s\n", p->content);
+
+		sendto(sock, p, rlen, 0, (struct sockaddr*) &csin, sizeof(csin));
 	}
 
-	close(s);
+	close(sock);
 }
