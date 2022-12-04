@@ -7,57 +7,29 @@ Delay time: 50 ms - 150 ms
 Loss rate: 40%
 Corrupt rate: 10%
 Speed limit: 10 Mbps
+MTU: 1,500
 
-Consider for 1,000 files with 32 KiB size.
+Consider for 1,000 files with 32 KB size.
+Splitted into about 20,000 chunks with 1.5 KB size.
 
 ## RUP Structure
-UDP Payload: Type, Packet index, Frag count, Frag seq, CRC32, Content
-Maximum content size per packet: 1024
+UDP Payload: Packet index, CRC32, Content
 
-### RUF File
-General: index, file size, CRC32 of content, filename length, filename
-Client: incomplete chunks
+## Behavior
+- Server: Merge all data into one big packet, then split into chunks
+- Client: Send hello for 10 times
+- Server: Send first 3 chunks for 10 times
+- Server: Start sending all packets for one time
+- Client: Send all status updates every 100 ms
+- Server: After initial packets, send missing packets in sequence
 
-## Types
-- Type 0x01: Ping
-- Type 0x11: Pong
-- Type 0x02: Get directory list
-- Type 0x12: Directory list
-- Type 0x03: Status update
-- Type 0x13: Ack to update
-- Type 0x14: File content
-
-### Ping / Pong
-Request: 128 bytes of random value
-Response: 128 bytes of the same value
-
-### Directory list
-Request: empty
-Response: file count, (index, file size, CRC32 of content, filename length, filename) * N
-filename: end with NULL
+## RUF structure
+- (int) Total chunk count
+- (int) File sizes * 1000
+- File content * 1000
 
 ### Status update
-Request: list length, (file index) * N
-Response: the same content
+- (int) High bits of this chunk group
+- (bit) Received or not * 8192
 
-The list content all ID of incomplete files.
-
-Server behavior:
-- Send response for 8 times
-- Set client entry
-
-### File content
-Request: not applicable
-Response: file index, file size, CRC32 of file, filename length, filename, content
-
-The server will pick files from incomplete pool (sequentially / randomly / by size).
-
-Server behavior:
-- Send each packet for 4 times (94% success rate)
-
-## Client behavior
-- Send **Type 0x02 Get list** for 8 times (99.6% success rate)
-- Construct file structure
-- Send first status update for 8 times
-- Receive files
-- Send status update every 100 ms
+For 16385 - 24576 chunks, it will have 3 chunk groups.

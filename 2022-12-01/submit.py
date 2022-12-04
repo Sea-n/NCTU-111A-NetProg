@@ -11,7 +11,7 @@ if len(sys.argv) < 3:
     print("usage: {} server-program client-program [team-token]".format(sys.argv[0]));
     sys.exit(-1);
 
-r = remote('inp111.zoolab.org', 10009)
+r = remote('140.113.213.213', 10009)  # inp111.zoolab.org
 
 
 def solve_pow():
@@ -51,8 +51,7 @@ def upload(fn):
 
 
 solve_pow();
-print(sys.argv);
-send_teamtoken(sys.argv[3] if len(sys.argv) > 3 else '');
+send_teamtoken('SHJ5CREU73RJVN2D');
 upload(sys.argv[1]);
 upload(sys.argv[2]);
 
