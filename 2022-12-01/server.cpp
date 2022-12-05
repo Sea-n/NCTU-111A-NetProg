@@ -42,7 +42,6 @@ int main(int argc, char *argv[]) {
 					for (int i=0; i<8; i++)
 						rus->content[j] |= completed[(k * CHUNK + j) * 8 + i] ? (1<<i) : 0;
 				}
-				rus->crc32 = crc32(rus);
 				sendto(sock, rus, MTU, 0, (struct sockaddr*) &csin, sinlen);
 			}
 		}
@@ -55,7 +54,6 @@ int main(int argc, char *argv[]) {
 			continue;
 
 		recvfrom(sock, rup_buf, MTU, 0, (struct sockaddr*) &csin, &sinlen);
-		if (rup->crc32 != crc32(rup)) continue;  // Corrupted
 		if (completed.test(rup->index)) continue;  // Duplicated
 		memcpy(ruf_buf + rup->index*CHUNK, rup->content, CHUNK);
 		completed.set(rup->index);

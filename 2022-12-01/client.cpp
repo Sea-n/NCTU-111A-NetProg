@@ -48,7 +48,6 @@ int main(int argc, char *argv[]) {
 	for (int k=0; k<ruf->chunks; k++) {
 		rup[k].index = k;
 		memcpy(rup[k].content, buf_ruf + k*CHUNK, CHUNK);
-		rup[k].crc32 = crc32(&rup[k]);
 	}
 
 	// Send metadata first
@@ -77,7 +76,6 @@ int main(int argc, char *argv[]) {
 				continue;
 
 			recvfrom(sock, rus_buf, MTU, 0, (struct sockaddr*) &csin, &sinlen);
-			if (rus->crc32 != crc32(rus)) continue;
 			if (rus->index < 0) continue;
 			for (int j=0; j<CHUNK; j++)
 				for (int i=0; i<8; i++)
