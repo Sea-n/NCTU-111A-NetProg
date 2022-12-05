@@ -1,4 +1,4 @@
-#include "server.h"
+#include "generic.h"
 
 // Size too big
 char ruf_buf[33001002] = {};
@@ -7,7 +7,7 @@ int main(int argc, char *argv[]) {
 	int sock;
 	struct sockaddr_in sin, csin;
 	socklen_t csinlen = sizeof(csin);
-	struct timeval now, prev;
+	struct timeval tv, now, prev;
 	char recv_buf[MTU];
 	RUF *ruf = (RUF *) &ruf_buf;
 
@@ -32,9 +32,9 @@ int main(int argc, char *argv[]) {
 	for (;;) {
 		prev = now;
 		gettimeofday(&now, nullptr);
-		if (now.tv_usec % 1000 < prev.tv_usec % 1000) {
+		if (now.tv_usec % 80000 < prev.tv_usec % 80000) {
 			RUP *rus = (RUP *) new char[MTU];
-			for (int k=0; k<2; k++) {
+			for (int k=(ruf->chunks / CHUNK / 8); k>=0; k--) {
 				rus->index = k;
 				for (int j=0; j<CHUNK; j++) {
 					rus->content[j] = 0;
@@ -51,11 +51,15 @@ int main(int argc, char *argv[]) {
 		if (completed.test(rup_recv->index)) continue;
 		memcpy(ruf_buf + rup_recv->index*CHUNK, rup_recv->content, CHUNK);
 		completed.set(rup_recv->index);
-		if (completed.count() % 50 == 0 && 0)
-			printf("Completed %ld / %d  rem=%ld\n", completed.count(), ruf->chunks, ruf->chunks - completed.count());
+		gettimeofday(&tv, nullptr);
+#ifdef _DEBUG
+		if (completed.count() % 50 == 0 && 1)
+			printf("%03ld.%03ld %20s recv rem=%ld\n", tv.tv_sec % 1000, tv.tv_usec / 1000,
+					"", ruf->chunks - completed.count());
+#endif
 		if ((int) completed.count() == ruf->chunks) break;
 	}
-	printf("Completed.\n");
+	printf("%03ld.%03ld %20s recv completed.\n", tv.tv_sec % 1000, tv.tv_usec / 1000, "");
 
 	RUP *rus = (RUP *) new char[MTU];
 	for (int k=0; k<3; k++) {

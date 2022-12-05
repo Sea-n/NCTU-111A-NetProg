@@ -1,7 +1,5 @@
 # Robust UDP Protocol
 
-netem spec: limit 1000 delay 100ms 50ms loss 40% corrupt 10% rate 10Mbit
-
 Max on-fly packets: 1,000
 Delay time: 50 ms - 150 ms
 Loss rate: 40%
@@ -10,7 +8,13 @@ Speed limit: 10 Mbps
 MTU: 1,500
 
 Consider for 1,000 files with 32 KB size.
-Splitted into about 20,000 chunks with 1.5 KB size.
+Splitted into about 11,500 chunks with 1.5 KB size.
+
+```bash
+ip link set dev lo mtu 1500
+tc qdisc del dev lo root netem
+tc qdisc add dev lo root netem limit 1000 delay 100ms 50ms loss 40% corrupt 10% rate 10Mbit
+```
 
 ## RUP Structure
 UDP Payload: Packet index, CRC32, Content
@@ -32,4 +36,4 @@ UDP Payload: Packet index, CRC32, Content
 - (int) High bits of this chunk group
 - (bit) Received or not * 8192
 
-For 16385 - 24576 chunks, it will have 3 chunk groups.
+For 8,193 - 16,386, it will have 2 chunk groups.

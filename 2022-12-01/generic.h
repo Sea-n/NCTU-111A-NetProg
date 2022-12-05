@@ -1,5 +1,5 @@
-#include <netinet/in.h>
 #include <sys/socket.h>
+#include <arpa/inet.h>
 #include <sys/time.h>
 #include <unistd.h>
 #include <cstdlib>
@@ -8,7 +8,7 @@
 #include <bitset>
 #include <cstdio>
 
-#define MTU 1464
+#define MTU (1500 - 28)
 #define CHUNK (MTU - 8)  // int * 2
 
 using namespace std;
@@ -28,6 +28,7 @@ typedef struct {
 unsigned CRC32_TABLE[256] = {};
 
 static unsigned crc32(const RUP* pkt) {
+	unsigned char* buf = (unsigned char*) pkt;
 	unsigned crc = 0xFFFFFFFF;
 
 	if (!CRC32_TABLE[0]) {
@@ -42,7 +43,6 @@ static unsigned crc32(const RUP* pkt) {
 		}
 	}
 
-	unsigned char* buf = (unsigned char*) pkt;
 	for (int i=4; i<MTU; i++)
 		crc = CRC32_TABLE[(crc ^ buf[i]) & 0xFF] ^ (crc >> 8);
 	return crc ^ 0xFFFFFFFF;
