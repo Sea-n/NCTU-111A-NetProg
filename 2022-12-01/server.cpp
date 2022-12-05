@@ -1,15 +1,18 @@
 #include "generic.h"
 
 // Size too big
-char ruf_buf[33001002] = {};
+char rup_buf[MTU], ruf_buf[33001002] = {};
 
 int main(int argc, char *argv[]) {
-	int sock;
 	struct sockaddr_in sin, csin;
-	socklen_t csinlen = sizeof(csin);
-	struct timeval tv, now, prev;
-	char recv_buf[MTU];
+	socklen_t sinlen = sizeof(sin);
+	RUP *rus = (RUP *) new char[MTU];
 	RUF *ruf = (RUF *) &ruf_buf;
+	RUP *rup = (RUP *) &rup_buf;
+	bitset<24600> completed{0};
+	timeval tv, now;
+	long prev, usec;
+	int sock, rem;
 
 	if (argc != 4) {
 		fprintf(stderr, "usage: %s <path-to-store-files> <total-number-of-files> <port>\n", argv[0]);
@@ -17,23 +20,21 @@ int main(int argc, char *argv[]) {
 	}
 
 	// Socket init
-	memset(&sin, 0, sizeof(sin));
+	memset(&sin, 0, sinlen);
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons(strtol(argv[3], NULL, 0));
 	sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	bind(sock, (struct sockaddr*) &sin, sizeof(sin));
+	bind(sock, (struct sockaddr*) &sin, sinlen);
 
-	RUP *rup_recv = (RUP *) &recv_buf;
-	recvfrom(sock, recv_buf, MTU, 0, (struct sockaddr*) &csin, &csinlen);
+	gettimeofday(&now, nullptr);
+	prev = (now.tv_sec + 6l) * 1'000'000l + now.tv_usec;
 
-	bitset<24600> completed{0};
-
-
-	for (;;) {
-		prev = now;
+	for (;;) {  // Main loop
+		// Status update
 		gettimeofday(&now, nullptr);
-		if (now.tv_usec % 80000 < prev.tv_usec % 80000) {
-			RUP *rus = (RUP *) new char[MTU];
+		usec = prev - now.tv_sec*1'000'000 - now.tv_usec;
+		if (usec < 0) {
+			prev += (rem > 2000) ? 500'000 : 100'000;
 			for (int k=(ruf->chunks / CHUNK / 8); k>=0; k--) {
 				rus->index = k;
 				for (int j=0; j<CHUNK; j++) {
@@ -42,34 +43,30 @@ int main(int argc, char *argv[]) {
 						rus->content[j] |= completed[(k * CHUNK + j) * 8 + i] ? (1<<i) : 0;
 				}
 				rus->crc32 = crc32(rus);
-				sendto(sock, rus, MTU, 0, (struct sockaddr*) &csin, sizeof(csin));
+				sendto(sock, rus, MTU, 0, (struct sockaddr*) &csin, sinlen);
 			}
 		}
 
-		recvfrom(sock, recv_buf, MTU, 0, (struct sockaddr*) &csin, &csinlen);
-		if (rup_recv->crc32 != crc32(rup_recv)) continue;
-		if (completed.test(rup_recv->index)) continue;
-		memcpy(ruf_buf + rup_recv->index*CHUNK, rup_recv->content, CHUNK);
-		completed.set(rup_recv->index);
+		// Receive packets
+		fd_set fds;
+		timeval zero = {0, 0};
+		FD_ZERO(&fds); FD_SET(sock, &fds);
+		if (select(1024, &fds, NULL, NULL, &zero) <= 0)
+			continue;
+
+		recvfrom(sock, rup_buf, MTU, 0, (struct sockaddr*) &csin, &sinlen);
+		if (rup->crc32 != crc32(rup)) continue;  // Corrupted
+		if (completed.test(rup->index)) continue;  // Duplicated
+		memcpy(ruf_buf + rup->index*CHUNK, rup->content, CHUNK);
+		completed.set(rup->index);
+		rem = ruf->chunks - completed.count();
 		gettimeofday(&tv, nullptr);
 #ifdef _DEBUG
-		if (completed.count() % 50 == 0 && 1)
-			printf("%03ld.%03ld %20s recv rem=%ld\n", tv.tv_sec % 1000, tv.tv_usec / 1000,
-					"", ruf->chunks - completed.count());
+		if (rem % 500 == 0 || (rem < 1000 && rem % 50 == 0))
+			printf("%02ld.%03ld %20s recv rem=%d\n", tv.tv_sec % 60, tv.tv_usec / 1000, "", rem);
 #endif
-		if ((int) completed.count() == ruf->chunks) break;
-	}
-	printf("%03ld.%03ld %20s recv completed.\n", tv.tv_sec % 1000, tv.tv_usec / 1000, "");
-
-	RUP *rus = (RUP *) new char[MTU];
-	for (int k=0; k<3; k++) {
-		rus->index = -87;
-		rus->crc32 = crc32(rus);
-		for (int i=0; i<10; i++) {
-			sendto(sock, rus, MTU, 0, (struct sockaddr*) &csin, sizeof(csin));
-			usleep(100);
-		}
-	}
+		if (rem == 0) break;
+	}  // End of main loop
 
 	char filename[256];
 	char *p = ruf->content;
@@ -79,4 +76,6 @@ int main(int argc, char *argv[]) {
 		file.write(p, ruf->size[k]);
 		p += ruf->size[k];
 	}
+
+	printf("%02ld.%03ld %20s recv completed.\n", tv.tv_sec % 60, tv.tv_usec / 1000, "");
 }
