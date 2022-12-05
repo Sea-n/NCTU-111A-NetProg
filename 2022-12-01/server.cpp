@@ -27,14 +27,14 @@ int main(int argc, char *argv[]) {
 	bind(sock, (struct sockaddr*) &sin, sinlen);
 
 	gettimeofday(&now, nullptr);
-	prev = (now.tv_sec + 6l) * 1'000'000l + now.tv_usec;
+	prev = (now.tv_sec + 7l) * 1'000'000l + now.tv_usec;
 
 	for (;;) {  // Main loop
 		// Status update
 		gettimeofday(&now, nullptr);
 		usec = prev - now.tv_sec*1'000'000 - now.tv_usec;
 		if (usec < 0) {
-			prev += (rem > 2000) ? 500'000 : 100'000;
+			prev += (rem > 2000) ? 200'000 : 50'000;
 			for (int k=(ruf->chunks / CHUNK / 8); k>=0; k--) {
 				rus->index = k;
 				for (int j=0; j<CHUNK; j++) {
@@ -50,7 +50,7 @@ int main(int argc, char *argv[]) {
 		fd_set fds;
 		timeval zero = {0, 0};
 		FD_ZERO(&fds); FD_SET(sock, &fds);
-		if (select(1024, &fds, NULL, NULL, &zero) <= 0)
+		if (select(10, &fds, NULL, NULL, &zero) <= 0)
 			continue;
 
 		recvfrom(sock, rup_buf, MTU, 0, (struct sockaddr*) &csin, &sinlen);
@@ -60,7 +60,7 @@ int main(int argc, char *argv[]) {
 		rem = ruf->chunks - completed.count();
 		gettimeofday(&tv, nullptr);
 #ifdef _DEBUG
-		if (rem % 500 == 0 || (rem < 1000 && rem % 50 == 0))
+		if (rem % 500 == 0 || (rem < 500 && rem % 50 == 0))
 			printf("%02ld.%03ld %20s recv rem=%d\n", tv.tv_sec % 60, tv.tv_usec / 1000, "", rem);
 #endif
 		if (rem == 0) break;

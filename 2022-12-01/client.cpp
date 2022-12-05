@@ -56,7 +56,7 @@ int main(int argc, char *argv[]) {
 		sendto(sock, &rup[0], MTU, 0, (struct sockaddr*) &sin, sinlen);
 
 	gettimeofday(&tv, nullptr);
-	prev = tv.tv_sec * 1'000'000l + tv.tv_usec - 360'000l;
+	prev = tv.tv_sec * 1'000'000l + tv.tv_usec - 420'000l;
 	for (int round=0; round<24; round++) {  // Main loop
 		for (int k=0; k<ruf->chunks; k++) {
 			// Send packets
@@ -64,7 +64,7 @@ int main(int argc, char *argv[]) {
 			gettimeofday(&tv, nullptr);
 			usec = prev - tv.tv_sec*1'000'000l - tv.tv_usec;
 			if (usec < 0) {
-				prev += (rem > 2000) ? 745 : 800;
+				prev += (rem > 2000) ? 748 : 762;
 				sendto(sock, &rup[k], MTU, 0, (struct sockaddr*) &sin, sinlen);
 			} else {
 				k--;
@@ -72,14 +72,14 @@ int main(int argc, char *argv[]) {
 
 			// Update status
 			FD_ZERO(&fds); FD_SET(sock, &fds);
-			if (select(1024, &fds, NULL, NULL, &zero) <= 0)
+			if (select(10, &fds, NULL, NULL, &zero) <= 0)
 				continue;
 
 			recvfrom(sock, rus_buf, MTU, 0, (struct sockaddr*) &csin, &sinlen);
-			if (rus->index < 0) continue;
 			for (int j=0; j<CHUNK; j++)
 				for (int i=0; i<8; i++)
-					completed[(rus->index * CHUNK + j) * 8 + i] = (rus->content[j] & (1<<i)) ? 1 : 0;
+					if (rus->content[j] & (1<<i))
+						completed.set((rus->index * CHUNK + j) * 8 + i);
 
 			rem = ruf->chunks - completed.count();
 #ifdef _DEBUG

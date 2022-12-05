@@ -9,17 +9,17 @@
 #include <cstdio>
 
 #define MTU (1500 - 28)
-#define CHUNK (MTU - 8)  // int * 2
+#define CHUNK (MTU - 2)
 
 using namespace std;
 
 typedef struct {
-	int index;
+	short index;
 	char content[CHUNK] = {};
 } RUP;  // Protocol
 
 typedef struct {
-	int chunks;
-	int size[1000] = {};
+	short chunks;
+	unsigned short size[1000] = {};
 	char content[];
 } RUF;  // File
