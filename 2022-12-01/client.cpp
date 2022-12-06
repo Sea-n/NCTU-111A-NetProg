@@ -1,8 +1,8 @@
 #include "generic.h"
 
 // Size too big
-char buf_ruf[33001002] = {};
-RUP rup[24600];
+char buf_ruf[17600100] = {};
+RUP rup[11800];
 
 int main(int argc, char *argv[]) {
 	struct sockaddr_in sin, csin;
@@ -52,19 +52,20 @@ int main(int argc, char *argv[]) {
 
 	// Send metadata first
 	printf("%02ld.%03ld  Total %d chunks\n", tv.tv_sec % 60, tv.tv_usec / 1000, rem);
-	for (int i=0; i<10; i++)
-		sendto(sock, &rup[0], MTU, 0, (struct sockaddr*) &sin, sinlen);
+	for (int k=0; k<2; k++)
+		for (int i=0; i<10; i++)
+			sendto(sock, &rup[k], MTU, 0, (struct sockaddr*) &sin, sinlen);
 
 	gettimeofday(&tv, nullptr);
 	prev = tv.tv_sec * 1'000'000l + tv.tv_usec - 420'000l;
-	for (int round=0; round<24; round++) {  // Main loop
+	for (int round=0; rem > 0; round++) {  // Main loop
 		for (int k=0; k<ruf->chunks; k++) {
 			// Send packets
 			while (completed[k]) k++;
 			gettimeofday(&tv, nullptr);
 			usec = prev - tv.tv_sec*1'000'000l - tv.tv_usec;
 			if (usec < 0) {
-				prev += (rem > 2000) ? 748 : 762;
+				prev += (round < 10) ? 754 : 800;
 				sendto(sock, &rup[k], MTU, 0, (struct sockaddr*) &sin, sinlen);
 			} else {
 				k--;
@@ -90,7 +91,8 @@ int main(int argc, char *argv[]) {
 
 		gettimeofday(&tv, nullptr);
 #ifdef _DEBUG
-		printf("%02ld.%03ld  send round=%d\n", tv.tv_sec % 60, tv.tv_usec / 1000, round);
+		if (round < 20)
+			printf("%02ld.%03ld  round=%d\n", tv.tv_sec % 60, tv.tv_usec / 1000, round);
 #endif
 	}  // End of main loop
 }

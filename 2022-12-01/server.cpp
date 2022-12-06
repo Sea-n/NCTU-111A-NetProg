@@ -1,11 +1,12 @@
 #include "generic.h"
 
 // Size too big
-char rup_buf[MTU], ruf_buf[33001002] = {};
+char ruf_buf[17600100] = {};
 
 int main(int argc, char *argv[]) {
 	struct sockaddr_in sin, csin;
 	socklen_t sinlen = sizeof(sin);
+	char rup_buf[MTU], filename[256];
 	RUP *rus = (RUP *) new char[MTU];
 	RUF *ruf = (RUF *) &ruf_buf;
 	RUP *rup = (RUP *) &rup_buf;
@@ -34,7 +35,7 @@ int main(int argc, char *argv[]) {
 		gettimeofday(&now, nullptr);
 		usec = prev - now.tv_sec*1'000'000 - now.tv_usec;
 		if (usec < 0) {
-			prev += (rem > 2000) ? 200'000 : 50'000;
+			prev += (rem > 800) ? 300'000 : 50'000;
 			for (int k=(ruf->chunks / CHUNK / 8); k>=0; k--) {
 				rus->index = k;
 				for (int j=0; j<CHUNK; j++) {
@@ -43,6 +44,10 @@ int main(int argc, char *argv[]) {
 						rus->content[j] |= completed[(k * CHUNK + j) * 8 + i] ? (1<<i) : 0;
 				}
 				sendto(sock, rus, MTU, 0, (struct sockaddr*) &csin, sinlen);
+#ifdef _DEBUG
+				gettimeofday(&tv, nullptr);
+				printf("%02ld.%03ld %20s recv rem=%d\n", tv.tv_sec % 60, tv.tv_usec / 1000, "", rem);
+#endif
 			}
 		}
 
@@ -60,13 +65,13 @@ int main(int argc, char *argv[]) {
 		rem = ruf->chunks - completed.count();
 		gettimeofday(&tv, nullptr);
 #ifdef _DEBUG
-		if (rem % 500 == 0 || (rem < 500 && rem % 50 == 0))
+		gettimeofday(&tv, nullptr);
+		if (rem % 500 == 0)
 			printf("%02ld.%03ld %20s recv rem=%d\n", tv.tv_sec % 60, tv.tv_usec / 1000, "", rem);
 #endif
 		if (rem == 0) break;
 	}  // End of main loop
 
-	char filename[256];
 	char *p = ruf->content;
 	for (int k=0; k<1000; k++) {
 		sprintf(filename, "%s/%06d", argv[1], k);
@@ -75,5 +80,12 @@ int main(int argc, char *argv[]) {
 		p += ruf->size[k];
 	}
 
-	printf("%02ld.%03ld %20s recv completed.\n", tv.tv_sec % 60, tv.tv_usec / 1000, "");
+	// Close client
+	for (int j=0; j<CHUNK; j++)
+		rus->content[j] = 0xFF;
+	for (int i=0; i<10; i++)
+		sendto(sock, rus, MTU, 0, (struct sockaddr*) &csin, sinlen);
+
+	gettimeofday(&tv, nullptr);
+	printf("%02ld.%03ld %20s recv written.\n", tv.tv_sec % 60, tv.tv_usec / 1000, "");
 }
