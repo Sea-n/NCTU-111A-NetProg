@@ -9,17 +9,18 @@
 #include <cstdio>
 
 #define MTU (1500 - 28)
-#define CHUNK (MTU - 2)
+#define CHUNK_PKT (MTU - 2)
+#define CHUNK_BUF (CHUNK_PKT / 5 * 6)
 
 using namespace std;
 
 typedef struct {
 	short index;
-	char content[CHUNK] = {};
+	unsigned char content[CHUNK_PKT] = {};
 } RUP;  // Protocol
 
 typedef struct {
-	short chunks;
+	unsigned short chunks;
 	unsigned short size[1000] = {};
-	char content[];
-} RUF;  // File
+	unsigned short padding[469] = {};
+} RUF;  // Metadata

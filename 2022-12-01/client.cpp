@@ -1,8 +1,8 @@
 #include "generic.h"
 
 // Size too big
-char buf_ruf[17600100] = {};
-RUP rup[11800];
+char buf_file[17600100] = {};
+RUP rup[9800];
 
 int main(int argc, char *argv[]) {
 	struct sockaddr_in sin, csin;
@@ -10,9 +10,10 @@ int main(int argc, char *argv[]) {
 	timeval tv, zero = {0, 0};
 	bitset<24600> completed = {0};
 	char rus_buf[MTU];
-	RUF *ruf = (RUF *) &buf_ruf;
+	RUF *ruf = new RUF;
 	RUP *rus = (RUP *) rus_buf;
-	long prev, usec;
+	unsigned long prev, conv;
+	long usec;
 	int sock, rem;
 	fd_set fds;
 
@@ -32,7 +33,7 @@ int main(int argc, char *argv[]) {
 
 	// Merge all files into one RUF
 	char filename[256];
-	char *p = ruf->content;
+	char *p = buf_file;
 	for (int k=0; k<1000; k++) {
 		sprintf(filename, "%s/%06d", argv[1], k);
 		ifstream file(filename, ios::binary | ios::ate);
@@ -43,11 +44,25 @@ int main(int argc, char *argv[]) {
 	}
 
 	// Split into RUP chunks
-	ruf->chunks = (p - (char *) ruf) / CHUNK + 1;
+	ruf->chunks = (p - (char *) buf_file) / CHUNK_BUF + 1;
 	rem = ruf->chunks;
-	for (int k=0; k<ruf->chunks; k++) {
+	for (int k=0; k<2; k++) {  // metadata: full range
 		rup[k].index = k;
-		memcpy(rup[k].content, buf_ruf + k*CHUNK, CHUNK);
+		memcpy(rup[k].content, (char *) ruf + k*CHUNK_PKT, CHUNK_PKT);
+	}
+	for (int k=2; k<ruf->chunks; k++) {  // file content: 0x21 - 0x7E
+		rup[k].index = k;
+		for (int j=0; j<CHUNK_PKT/5; j++) {
+			conv = 0;
+			for (int i=0; i<6; i++) {
+				conv *= 96;
+				conv += buf_file[k*CHUNK_BUF + j*6 + i] - 0x20;
+			}
+			for (int i=0; i<5; i++) {
+				rup[k].content[j*5 + (4-i)] = conv % 256;
+				conv /= 256;
+			}
+		}
 	}
 
 	// Send metadata first
@@ -58,7 +73,7 @@ int main(int argc, char *argv[]) {
 
 	gettimeofday(&tv, nullptr);
 	prev = tv.tv_sec * 1'000'000l + tv.tv_usec - 420'000l;
-	for (int round=0; rem > 0; round++) {  // Main loop
+	for (int round=0; ; round++) {  // Main loop
 		for (int k=0; k<ruf->chunks; k++) {
 			// Send packets
 			while (completed[k]) k++;
@@ -77,10 +92,11 @@ int main(int argc, char *argv[]) {
 				continue;
 
 			recvfrom(sock, rus_buf, MTU, 0, (struct sockaddr*) &csin, &sinlen);
-			for (int j=0; j<CHUNK; j++)
+			if (rus->index == -42) return 0;
+			for (int j=0; j<CHUNK_PKT; j++)
 				for (int i=0; i<8; i++)
 					if (rus->content[j] & (1<<i))
-						completed.set((rus->index * CHUNK + j) * 8 + i);
+						completed.set((rus->index * CHUNK_PKT + j) * 8 + i);
 
 			rem = ruf->chunks - completed.count();
 #ifdef _DEBUG

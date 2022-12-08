@@ -1,18 +1,19 @@
 #include "generic.h"
 
 // Size too big
-char ruf_buf[17600100] = {};
+char buf_file[17600100] = {};
 
 int main(int argc, char *argv[]) {
 	struct sockaddr_in sin, csin;
 	socklen_t sinlen = sizeof(sin);
 	char rup_buf[MTU], filename[256];
 	RUP *rus = (RUP *) new char[MTU];
-	RUF *ruf = (RUF *) &ruf_buf;
+	RUF *ruf = new RUF;
 	RUP *rup = (RUP *) &rup_buf;
 	bitset<24600> completed{0};
 	timeval tv, now;
-	long prev, usec;
+	unsigned long prev, conv;
+	long usec;
 	int sock, rem;
 
 	if (argc != 4) {
@@ -28,7 +29,9 @@ int main(int argc, char *argv[]) {
 	bind(sock, (struct sockaddr*) &sin, sinlen);
 
 	gettimeofday(&now, nullptr);
-	prev = (now.tv_sec + 7l) * 1'000'000l + now.tv_usec;
+	prev = (now.tv_sec + 5l) * 1'000'000l + now.tv_usec;
+	memset(rus->content, 0, sizeof(rus->content));
+	rus->index = 0;
 
 	for (;;) {  // Main loop
 		// Status update
@@ -36,19 +39,11 @@ int main(int argc, char *argv[]) {
 		usec = prev - now.tv_sec*1'000'000 - now.tv_usec;
 		if (usec < 0) {
 			prev += (rem > 800) ? 300'000 : 50'000;
-			for (int k=(ruf->chunks / CHUNK / 8); k>=0; k--) {
-				rus->index = k;
-				for (int j=0; j<CHUNK; j++) {
-					rus->content[j] = 0;
-					for (int i=0; i<8; i++)
-						rus->content[j] |= completed[(k * CHUNK + j) * 8 + i] ? (1<<i) : 0;
-				}
-				sendto(sock, rus, MTU, 0, (struct sockaddr*) &csin, sinlen);
+			sendto(sock, rus, MTU, 0, (struct sockaddr*) &csin, sinlen);
 #ifdef _DEBUG
-				gettimeofday(&tv, nullptr);
-				printf("%02ld.%03ld %20s recv rem=%d\n", tv.tv_sec % 60, tv.tv_usec / 1000, "", rem);
+			gettimeofday(&tv, nullptr);
+			printf("%02ld.%03ld %20s recv rem=%d\n", tv.tv_sec % 60, tv.tv_usec / 1000, "", rem);
 #endif
-			}
 		}
 
 		// Receive packets
@@ -60,10 +55,27 @@ int main(int argc, char *argv[]) {
 
 		recvfrom(sock, rup_buf, MTU, 0, (struct sockaddr*) &csin, &sinlen);
 		if (completed.test(rup->index)) continue;  // Duplicated
-		memcpy(ruf_buf + rup->index*CHUNK, rup->content, CHUNK);
 		completed.set(rup->index);
+		rus->content[rup->index >> 3] |= 1 << (rup->index & 7);
+
+		if (rup->index < 2) {  // didn't compress metadata
+			memcpy((char *)ruf + rup->index*CHUNK_PKT, rup->content, CHUNK_PKT);
+			continue;
+		}
+
+		for (int j=0; j<CHUNK_PKT/5; j++) {  // decompress
+			conv = 0;
+			for (int i=0; i<5; i++) {
+				conv *= 256;
+				conv += rup->content[j*5 + i];
+			}
+			for (int i=0; i<6; i++) {
+				buf_file[rup->index*CHUNK_BUF + j*6 + (5-i)] = (conv % 96) + 0x20;
+				conv /= 96;
+			}
+		}
+
 		rem = ruf->chunks - completed.count();
-		gettimeofday(&tv, nullptr);
 #ifdef _DEBUG
 		gettimeofday(&tv, nullptr);
 		if (rem % 500 == 0)
@@ -72,7 +84,7 @@ int main(int argc, char *argv[]) {
 		if (rem == 0) break;
 	}  // End of main loop
 
-	char *p = ruf->content;
+	char *p = buf_file;
 	for (int k=0; k<1000; k++) {
 		sprintf(filename, "%s/%06d", argv[1], k);
 		ofstream file(filename, ios::binary | ios::out);
@@ -81,8 +93,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	// Close client
-	for (int j=0; j<CHUNK; j++)
-		rus->content[j] = 0xFF;
+	rus->index = -42;
 	for (int i=0; i<10; i++)
 		sendto(sock, rus, MTU, 0, (struct sockaddr*) &csin, sinlen);
 
