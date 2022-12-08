@@ -10,7 +10,7 @@ int main(int argc, char *argv[]) {
 	timeval tv, zero = {0, 0};
 	bitset<24600> completed = {0};
 	char rus_buf[MTU];
-	RUF *ruf = new RUF;
+	RUM *rum = new RUM;
 	RUP *rus = (RUP *) rus_buf;
 	unsigned long prev, conv;
 	long usec;
@@ -31,26 +31,26 @@ int main(int argc, char *argv[]) {
 	inet_pton(AF_INET, argv[4], &sin.sin_addr);
 	sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
-	// Merge all files into one RUF
+	// Merge all files into one buffer
 	char filename[256];
 	char *p = buf_file;
 	for (int k=0; k<1000; k++) {
 		sprintf(filename, "%s/%06d", argv[1], k);
 		ifstream file(filename, ios::binary | ios::ate);
-		ruf->size[k] = file.tellg();
+		rum->size[k] = file.tellg();
 		file.seekg(0, ios::beg);
-		file.read(p, ruf->size[k]);
-		p += ruf->size[k];
+		file.read(p, rum->size[k]);
+		p += rum->size[k];
 	}
 
 	// Split into RUP chunks
-	ruf->chunks = (p - (char *) buf_file) / CHUNK_BUF + 1;
-	rem = ruf->chunks;
+	rum->chunks = (p - (char *) buf_file) / CHUNK_BUF + 1;
+	rem = rum->chunks;
 	for (int k=0; k<2; k++) {  // metadata: full range
 		rup[k].index = k;
-		memcpy(rup[k].content, (char *) ruf + k*CHUNK_PKT, CHUNK_PKT);
+		memcpy(rup[k].content, (char *) rum + k*CHUNK_PKT, CHUNK_PKT);
 	}
-	for (int k=2; k<ruf->chunks; k++) {  // file content: 0x21 - 0x7E
+	for (int k=2; k<rum->chunks; k++) {  // file content: 0x21 - 0x7E
 		rup[k].index = k;
 		for (int j=0; j<CHUNK_PKT/5; j++) {
 			conv = 0;
@@ -74,7 +74,7 @@ int main(int argc, char *argv[]) {
 	gettimeofday(&tv, nullptr);
 	prev = tv.tv_sec * 1'000'000l + tv.tv_usec - 420'000l;
 	for (int round=0; ; round++) {  // Main loop
-		for (int k=0; k<ruf->chunks; k++) {
+		for (int k=0; k<rum->chunks; k++) {
 			// Send packets
 			while (completed[k]) k++;
 			gettimeofday(&tv, nullptr);
@@ -98,7 +98,7 @@ int main(int argc, char *argv[]) {
 					if (rus->content[j] & (1<<i))
 						completed.set((rus->index * CHUNK_PKT + j) * 8 + i);
 
-			rem = ruf->chunks - completed.count();
+			rem = rum->chunks - completed.count();
 #ifdef _DEBUG
 			gettimeofday(&tv, nullptr);
 			printf("%02ld.%03ld  send rem=%d\n", tv.tv_sec % 60, tv.tv_usec / 1000, rem);

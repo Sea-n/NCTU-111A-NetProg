@@ -23,4 +23,4 @@ typedef struct {
 	unsigned short chunks;
 	unsigned short size[1000] = {};
 	unsigned short padding[469] = {};
-} RUF;  // Metadata
+} RUM;  // Metadata
