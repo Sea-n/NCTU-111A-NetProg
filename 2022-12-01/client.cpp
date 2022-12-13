@@ -13,7 +13,7 @@ int main(int argc, char *argv[]) {
 	RUM *rum = new RUM;
 	RUP *rus = (RUP *) rus_buf;
 	__int128 conv;
-	long prev, usec, delay=730;
+	long prev, usec;
 	int sock, rem;
 	fd_set fds;
 
@@ -60,7 +60,7 @@ int main(int argc, char *argv[]) {
 
 	// Split into RUP chunks
 	gettimeofday(&now, nullptr);
-	prev = now.tv_sec * 1'000'000l + now.tv_usec - 320'000l;
+	prev = now.tv_sec * 1'000'000l + now.tv_usec - 480'000l;
 	printf("%02ld.%03ld  round=1\n", now.tv_sec % 60, now.tv_usec / 1000);
 	for (int k=0; k<rum->chunks; k++) {  // file content: 0x21 - 0x7E
 		rup[k].index = k;
@@ -80,7 +80,7 @@ int main(int argc, char *argv[]) {
 		usec = prev - now.tv_sec*1'000'000l - now.tv_usec;
 		if (usec > 0)
 			usleep(usec);
-		prev += delay;
+		prev += 762;
 		sendto(sock, &rup[k], MTU, 0, (struct sockaddr*) &sin, sinlen);
 	}
 
@@ -94,7 +94,7 @@ int main(int argc, char *argv[]) {
 			gettimeofday(&now, nullptr);
 			usec = prev - now.tv_sec*1'000'000l - now.tv_usec;
 			if (usec < 0) {
-				prev += delay;
+				prev += 762;
 				sendto(sock, &rup[k], MTU, 0, (struct sockaddr*) &sin, sinlen);
 			} else {
 				k--;
@@ -110,12 +110,6 @@ int main(int argc, char *argv[]) {
 			gettimeofday(&now, nullptr);
 			memcpy(&tv, rus->content + 1400, sizeof(tv));
 			usec = (now.tv_sec - tv.tv_sec) * 1'000'000l + (now.tv_usec - tv.tv_usec);
-			if (usec > 300'000) delay = 900;
-			else if (usec > 200'000) delay = 800;
-			else if (usec > 155'000) delay = 760;
-			else if (usec > 145'000) delay = 755;
-			else if (usec > 130'000) delay = 750;
-			else delay = 200;
 			for (int j=0; j<1280; j++)
 				for (int i=0; i<8; i++)
 					if (rus->content[j] & (1<<i))
