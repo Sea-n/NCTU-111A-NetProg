@@ -4,17 +4,20 @@ string fqdn2name(const char *fqdn);
 string name2fqdn(const char *name);
 
 int main(int argc, char *argv[]) {
-	struct sockaddr_in sin, csin;
-	socklen_t sinlen = sizeof(sin);
+	struct sockaddr_in sin1, sin2, csin1, csin2;
+	socklen_t sinlen = sizeof(sin1);
 	char rcv_buf[MTU], snd_buf[MTU];
 	char fwd_ns[64], qname_raw[512];
 	char line1[512], line2[512];
 	DNS *rcv = (DNS *) rcv_buf;
 	DNS *snd = (DNS *) snd_buf;
 	char *p, *ptr1, *ptr2;
+	int rcv_len, snd_len;
+	string dn, fn, qname;
 	vector<ZONE> zones;
-	string dn, fn;
-	int sock;
+	int qclass, qtype;
+	int sock1, sock2;
+	unsigned int *ui;
 
 	if (argc != 3) {
 		fprintf(stderr, "usage: %s <port> <config>\n", argv[0]);
@@ -22,16 +25,21 @@ int main(int argc, char *argv[]) {
 	}
 
 	// Socket init
-	memset(&sin, 0, sinlen);
-	sin.sin_family = AF_INET;
-	sin.sin_port = htons(strtol(argv[1], NULL, 0));
-	sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	bind(sock, (struct sockaddr*) &sin, sinlen);
+	memset(&sin1, 0, sinlen);
+	memset(&sin2, 0, sinlen);
+	sin1.sin_family = AF_INET;
+	sin2.sin_family = AF_INET;
+	sin1.sin_port = htons(strtol(argv[1], NULL, 0));
+	sin2.sin_port = htons(53);
+	sock1 = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	sock2 = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	bind(sock1, (struct sockaddr*) &sin1, sinlen);
 
 	// Construct RR set
 	ifstream conf("config.txt");
 	conf >> fwd_ns;
 	printf("Name Server: %s\n", fwd_ns);
+	inet_pton(AF_INET, fwd_ns, &sin2.sin_addr);
 	while (conf >> line1) {
 		vector<RR> rrs;
 		dn = strtok_r(line1, ",", &ptr1);
@@ -56,7 +64,7 @@ int main(int argc, char *argv[]) {
 			p = strtok_r(nullptr, ",", &ptr2);  // Type
 			if (strcmp(p, "A") == 0) {
 				rr.type = TYPE_A;
-				unsigned int *ui = (unsigned int *) rr.rdata;
+				ui = (unsigned int *) rr.rdata;
 				*ui = inet_addr(strtok_r(nullptr, "", &ptr2));  // Address
 				rr.rdlen += 4;
 			}
@@ -80,7 +88,7 @@ int main(int argc, char *argv[]) {
 				strcpy(rr.rdata+rr.rdlen, fqdn2name(strtok_r(nullptr, " ", &ptr2)).c_str());  // RNAME
 				rr.rdlen += strlen(rr.rdata+rr.rdlen) + 1;
 
-				unsigned int *ui = (unsigned int *) (rr.rdata+rr.rdlen);
+				ui = (unsigned int *) (rr.rdata+rr.rdlen);
 				*ui = __builtin_bswap32(atoi(strtok_r(nullptr, " ", &ptr2))); rr.rdlen += 4;  // Serial
 				*++ui = __builtin_bswap32(atoi(strtok_r(nullptr, " ", &ptr2))); rr.rdlen += 4;  // Refresh
 				*++ui = __builtin_bswap32(atoi(strtok_r(nullptr, " ", &ptr2))); rr.rdlen += 4;  // Retry
@@ -129,21 +137,23 @@ int main(int argc, char *argv[]) {
 	}
 
 	for (;;) {  // Main loop
-		recvfrom(sock, rcv_buf, MTU, 0, (struct sockaddr*) &csin, &sinlen);
+		rcv_len = recvfrom(sock1, rcv_buf, MTU, 0, (struct sockaddr*) &csin1, &sinlen);
 		p = rcv_buf + sizeof(DNS);
 		strcpy(qname_raw, p);
-		string qname = name2fqdn(qname_raw);
+		qname = name2fqdn(qname_raw);
 		p += qname.size();
-		int qtype = p[2];  // Only support up to 255
-		int qclass = p[4];
-
-		int snd_len = sizeof(DNS);
-		vector<string> need_a_rr;
-		memset(snd_buf, 0, MTU);
+		qtype = p[2];  // Only support up to 255
+		qclass = p[4];
 
 		for (ZONE zone : zones) {
 			if (qname != zone.F && !qname.ends_with('.' + zone.F))
 				continue;
+
+			snd_len = sizeof(DNS);
+			vector<string> need_a_rr;
+			memset(snd_buf, 0, MTU);
+			snd->id = rcv->id;
+			snd->qr = snd->aa = snd->rd = snd->ra = 1;
 
 			// Question Section
 			strcpy(snd_buf+snd_len, rcv_buf + sizeof(DNS));
@@ -173,8 +183,8 @@ int main(int argc, char *argv[]) {
 			// Authority Section
 			for (RR rr : zone.S) {
 				if (rr.name != "@") continue;
-
 				if (rr.type == qtype) continue;  // Alreay in answer
+
 				if (snd->ancount) {
 					if (rr.type != TYPE_NS) continue;
 				} else {
@@ -196,17 +206,15 @@ int main(int argc, char *argv[]) {
 				snd->arcount += 1;
 			}
 
-			snd->id = rcv->id;
-			snd->qr = 1;
-			snd->aa = 1;
-			snd->ra = 1;
 			goto response;
 		}  // End of for zones
 
 		// Forward
+		sendto(sock2, rcv_buf, rcv_len, 0, (struct sockaddr*) &sin2, sinlen);
+		snd_len = recvfrom(sock2, snd_buf, MTU, 0, (struct sockaddr*) &csin2, &sinlen);
 
 response:
-		sendto(sock, snd_buf, snd_len, 0, (struct sockaddr*) &csin, sinlen);
+		sendto(sock1, snd_buf, snd_len, 0, (struct sockaddr*) &csin1, sinlen);
 	}  // End of main loop
 }  // End of main()
 

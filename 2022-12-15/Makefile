@@ -1,2 +1,2 @@
 all:
-	g++ --std=c++2a -Wall -Wextra -o dns dns.cpp
+	g++ -std=c++2a -g -Wall -Wextra -o dns dns.cpp
