@@ -1,8 +1,5 @@
 #include "dns.h"
 
-string fqdn2name(const char *fqdn);
-string name2fqdn(const char *name);
-
 int main(int argc, char *argv[]) {
 	struct sockaddr_in sin1, sin2, csin1, csin2;
 	socklen_t sinlen = sizeof(sin1);
@@ -77,12 +74,15 @@ int main(int argc, char *argv[]) {
 				rr.type = TYPE_NS;
 				rr.need_a_rr = strtok_r(nullptr, "\r\n ", &ptr2);
 				strcpy(rr.rdata, fqdn2name(rr.need_a_rr.c_str()).c_str());
-				rr.rdlen += strlen(rr.rdata);  // NSDNAME
+				rr.rdlen += strlen(rr.rdata);
 				rr.rdata[rr.rdlen++] = '\0';
 			}
 
 			if (strcmp(p, "CNAME") == 0) {
 				rr.type = TYPE_CNAME;
+				strcpy(rr.rdata, fqdn2name(strtok_r(nullptr, "\r\n", &ptr2)).c_str());
+				rr.rdlen = strlen(rr.rdata);
+				rr.rdata[rr.rdlen++] = '\0';
 			}
 
 			if (strcmp(p, "SOA") == 0) {
@@ -114,10 +114,15 @@ int main(int argc, char *argv[]) {
 
 			if (strcmp(p, "TXT") == 0) {
 				rr.type = TYPE_TXT;
+				strcpy(rr.rdata+1, strtok_r(nullptr, "\r\n", &ptr2));
+				rr.rdata[0] = strlen(rr.rdata+1);
+				rr.rdlen = rr.rdata[0] + 1;
 			}
 
 			if (strcmp(p, "AAAA") == 0) {
 				rr.type = TYPE_AAAA;
+				inet_pton(AF_INET6, strtok_r(nullptr, "\r\n ", &ptr2), rr.rdata);
+				rr.rdlen += 16;
 			}
 
 			// Construct packet buffer

@@ -5,3 +5,6 @@ example1.org.
 dns,3600,IN,A,140.113.123.1
 www,300,IN,A,140.113.123.80
 mail,3600,IN,A,140.113.123.10
+sean,300,IN,CNAME,www.example1.org.
+sean,300,IN,TXT,Hello there, meow!
+sean,300,IN,AAAA,2400:6180:0:d0::2f:d001

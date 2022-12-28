@@ -58,3 +58,6 @@ typedef struct {
 } RR;
 
 typedef pair<string, vector<RR>> ZONE;
+
+string fqdn2name(const char *fqdn);
+string name2fqdn(const char *name);
