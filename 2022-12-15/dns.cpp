@@ -11,13 +11,14 @@ int main(int argc, char *argv[]) {
 	char line1[512], line2[512];
 	DNS *rcv = (DNS *) rcv_buf;
 	DNS *snd = (DNS *) snd_buf;
-	char *p, *ptr1, *ptr2;
 	int rcv_len, snd_len;
-	string dn, fn, qname;
+	string dn, fn, nip, qname;
 	vector<ZONE> zones;
+	char *ptr1, *ptr2;
 	int qclass, qtype;
 	int sock1, sock2;
 	unsigned int *ui;
+	const char *p;
 
 	if (argc != 3) {
 		fprintf(stderr, "usage: %s <port> <config>\n", argv[0]);
@@ -40,6 +41,9 @@ int main(int argc, char *argv[]) {
 	conf >> fwd_ns;
 	printf("Name Server: %s\n", fwd_ns);
 	inet_pton(AF_INET, fwd_ns, &sin2.sin_addr);
+
+	nip = "inplab.io.";
+
 	while (conf >> line1) {
 		vector<RR> rrs;
 		dn = strtok_r(line1, ",", &ptr1);
@@ -145,23 +149,24 @@ int main(int argc, char *argv[]) {
 		qtype = p[2];  // Only support up to 255
 		qclass = p[4];
 
+		// Header
+		snd_len = sizeof(DNS);
+		vector<string> need_a_rr;
+		memset(snd_buf, 0, MTU);
+		snd->id = rcv->id;
+		snd->qr = snd->aa = snd->rd = snd->ra = 1;
+
+		// Question Section
+		strcpy(snd_buf+snd_len, rcv_buf + sizeof(DNS));
+		snd_len += strlen(snd_buf+snd_len);
+		snd_buf[snd_len++] = '\0';
+		snd_buf[snd_len++] = 0; snd_buf[snd_len++] = qtype;
+		snd_buf[snd_len++] = 0; snd_buf[snd_len++] = qclass;
+		snd->qdcount += 1;
+
 		for (ZONE zone : zones) {
 			if (qname != zone.F && !qname.ends_with('.' + zone.F))
 				continue;
-
-			snd_len = sizeof(DNS);
-			vector<string> need_a_rr;
-			memset(snd_buf, 0, MTU);
-			snd->id = rcv->id;
-			snd->qr = snd->aa = snd->rd = snd->ra = 1;
-
-			// Question Section
-			strcpy(snd_buf+snd_len, rcv_buf + sizeof(DNS));
-			snd_len += strlen(snd_buf+snd_len);
-			snd_buf[snd_len++] = '\0';
-			snd_buf[snd_len++] = 0; snd_buf[snd_len++] = qtype;
-			snd_buf[snd_len++] = 0; snd_buf[snd_len++] = qclass;
-			snd->qdcount += 1;
 
 			// Answer Section
 			for (RR rr : zone.S) {
@@ -208,6 +213,27 @@ int main(int argc, char *argv[]) {
 
 			goto response;
 		}  // End of for zones
+
+		if (qname.ends_with('.' + nip) && qtype == TYPE_A) {
+			strcpy(snd_buf+snd_len, qname_raw);
+			snd_len += strlen(snd_buf+snd_len);
+			snd_buf[snd_len++] = '\0';
+			snd_buf[snd_len++] = 0; snd_buf[snd_len++] = qtype;
+			snd_buf[snd_len++] = 0; snd_buf[snd_len++] = qclass;
+			snd_len += 3; snd_buf[snd_len++] = 1;  // TTL
+			snd_buf[snd_len++] = 0; snd_buf[snd_len++] = 4;  // rdlen
+
+			p = qname.c_str();
+			for (int k=0; k<4; k++) {
+				while (*p >= '0' && *p <= '9') {
+					snd_buf[snd_len] *= 10;
+					snd_buf[snd_len] += *p++ - '0';
+				}
+				p++, snd_len++;
+			}
+			snd->ancount += 1;
+			goto response;
+		}  // nip
 
 		// Forward
 		sendto(sock2, rcv_buf, rcv_len, 0, (struct sockaddr*) &sin2, sinlen);
