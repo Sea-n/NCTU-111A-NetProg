@@ -1,3 +1,5 @@
-8.8.8.8
+208.67.222.222
 example1.org.,zone-example1.org.txt
 example2.org.,zone-example2.org.txt
+demo1.org.,zone-demo1.org.txt
+demo2.org.,zone-demo2.org.txt
