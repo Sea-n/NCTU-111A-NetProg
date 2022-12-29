@@ -1,7 +1,7 @@
 #include "dns.h"
 
 int main(int argc, char *argv[]) {
-	struct sockaddr_in sin1, sin2, csin1, csin2;
+	struct sockaddr_in sin1, sin2, csin1;
 	socklen_t sinlen = sizeof(sin1);
 	char rcv_buf[MTU], snd_buf[MTU];
 	char fwd_ns[64], qname_raw[512];
@@ -9,7 +9,7 @@ int main(int argc, char *argv[]) {
 	DNS *rcv = (DNS *) rcv_buf;
 	DNS *snd = (DNS *) snd_buf;
 	int rcv_len, snd_len;
-	string dn, fn, nip, qname;
+	string dn, fn, qname;
 	vector<ZONE> zones;
 	char *ptr1, *ptr2;
 	int qclass, qtype;
@@ -38,8 +38,7 @@ int main(int argc, char *argv[]) {
 	conf >> fwd_ns;
 	printf("Name Server: %s\n", fwd_ns);
 	inet_pton(AF_INET, fwd_ns, &sin2.sin_addr);
-
-	nip = "inplab.io.";
+	connect(sock2, (struct sockaddr*) &sin2, sinlen);
 
 	while (conf >> line1) {
 		vector<RR> rrs;
@@ -50,6 +49,8 @@ int main(int argc, char *argv[]) {
 		while (zf.getline(line2, 512)) {
 			RR rr;
 			rr.rdlen = 0;
+			memset(rr.rdata, 0, 512);
+			memset(rr.buf, 0, 1024);
 
 			rr.name = strtok_r(line2, ",", &ptr2);
 			rr.fqdn = (rr.name == "@") ? dn : (rr.name + "." + dn);
@@ -74,15 +75,13 @@ int main(int argc, char *argv[]) {
 				rr.type = TYPE_NS;
 				rr.need_a_rr = strtok_r(nullptr, "\r\n ", &ptr2);
 				strcpy(rr.rdata, fqdn2name(rr.need_a_rr.c_str()).c_str());
-				rr.rdlen += strlen(rr.rdata);
-				rr.rdata[rr.rdlen++] = '\0';
+				rr.rdlen += strlen(rr.rdata) + 1;
 			}
 
 			if (strcmp(p, "CNAME") == 0) {
 				rr.type = TYPE_CNAME;
 				strcpy(rr.rdata, fqdn2name(strtok_r(nullptr, "\r\n", &ptr2)).c_str());
-				rr.rdlen = strlen(rr.rdata);
-				rr.rdata[rr.rdlen++] = '\0';
+				rr.rdlen = strlen(rr.rdata) + 1;
 			}
 
 			if (strcmp(p, "SOA") == 0) {
@@ -108,8 +107,7 @@ int main(int argc, char *argv[]) {
 
 				rr.need_a_rr = strtok_r(nullptr, "\r\n ", &ptr2);
 				strcpy(rr.rdata+2, fqdn2name(rr.need_a_rr.c_str()).c_str());
-				rr.rdlen += strlen(rr.rdata+2);  // Exchange
-				rr.rdata[rr.rdlen++] = '\0';
+				rr.rdlen += strlen(rr.rdata+2) + 1;  // Exchange
 			}
 
 			if (strcmp(p, "TXT") == 0) {
@@ -127,10 +125,9 @@ int main(int argc, char *argv[]) {
 
 			// Construct packet buffer
 			strcpy(rr.buf, rr.full_name.c_str());
-			rr.buf_len = strlen(rr.buf);
-			rr.buf[rr.buf_len++] = '\0';
-			rr.buf[rr.buf_len++] = 0; rr.buf[rr.buf_len++] = rr.type;
-			rr.buf[rr.buf_len++] = 0; rr.buf[rr.buf_len++] = rr.clazz;
+			rr.buf_len = strlen(rr.buf) + 1;
+			rr.buf_len += 1; rr.buf[rr.buf_len++] = rr.type;
+			rr.buf_len += 1; rr.buf[rr.buf_len++] = rr.clazz;
 
 			int *rr_ttl = (int *) &rr.buf[rr.buf_len];
 			*rr_ttl = __builtin_bswap32(rr.ttl); rr.buf_len += 4;
@@ -163,15 +160,39 @@ int main(int argc, char *argv[]) {
 
 		// Question Section
 		strcpy(snd_buf+snd_len, rcv_buf + sizeof(DNS));
-		snd_len += strlen(snd_buf+snd_len);
-		snd_buf[snd_len++] = '\0';
-		snd_buf[snd_len++] = 0; snd_buf[snd_len++] = qtype;
-		snd_buf[snd_len++] = 0; snd_buf[snd_len++] = qclass;
+		snd_len += strlen(snd_buf+snd_len) + 1;
+		snd_len += 1; snd_buf[snd_len++] = qtype;
+		snd_len += 1; snd_buf[snd_len++] = qclass;
 		snd->qdcount += 1;
 
 		for (ZONE zone : zones) {
 			if (qname != zone.F && !qname.ends_with('.' + zone.F))
 				continue;
+
+			if (qtype == TYPE_A) {  // nip
+				int nip[4] = {-1, -1, -1, -1};
+				p = qname.c_str();
+				for (int k=0; k<4 && isdigit(*p); k++) {
+					nip[k] = 0;
+					while (isdigit(*p)) nip[k] = nip[k]*10 + (*p++ - '0');
+					if (*p++ != '.') break;
+				}
+
+				if (nip[3] >= 0) {
+					strcpy(snd_buf+snd_len, qname_raw);
+					snd_len += strlen(snd_buf+snd_len) + 1;
+					snd_len += 1; snd_buf[snd_len++] = qtype;
+					snd_len += 1; snd_buf[snd_len++] = qclass;
+					snd_len += 3; snd_buf[snd_len++] = 1;  // TTL
+					snd_len += 1; snd_buf[snd_len++] = 4;  // rdlen
+
+					for (int k=0; k<4; k++)
+						snd_buf[snd_len++] = nip[k];
+
+					snd->ancount += 1;
+					goto response;
+				}
+			}  // End of nip
 
 			// Answer Section
 			for (RR rr : zone.S) {
@@ -219,30 +240,9 @@ int main(int argc, char *argv[]) {
 			goto response;
 		}  // End of for zones
 
-		if (qname.ends_with('.' + nip) && qtype == TYPE_A) {
-			strcpy(snd_buf+snd_len, qname_raw);
-			snd_len += strlen(snd_buf+snd_len);
-			snd_buf[snd_len++] = '\0';
-			snd_buf[snd_len++] = 0; snd_buf[snd_len++] = qtype;
-			snd_buf[snd_len++] = 0; snd_buf[snd_len++] = qclass;
-			snd_len += 3; snd_buf[snd_len++] = 1;  // TTL
-			snd_buf[snd_len++] = 0; snd_buf[snd_len++] = 4;  // rdlen
-
-			p = qname.c_str();
-			for (int k=0; k<4; k++) {
-				while (*p >= '0' && *p <= '9') {
-					snd_buf[snd_len] *= 10;
-					snd_buf[snd_len] += *p++ - '0';
-				}
-				p++, snd_len++;
-			}
-			snd->ancount += 1;
-			goto response;
-		}  // nip
-
 		// Forward
-		sendto(sock2, rcv_buf, rcv_len, 0, (struct sockaddr*) &sin2, sinlen);
-		snd_len = recvfrom(sock2, snd_buf, MTU, 0, (struct sockaddr*) &csin2, &sinlen);
+		send(sock2, rcv_buf, rcv_len, 0);
+		snd_len = read(sock2, snd_buf, MTU);
 
 response:
 		sendto(sock1, snd_buf, snd_len, 0, (struct sockaddr*) &csin1, sinlen);
